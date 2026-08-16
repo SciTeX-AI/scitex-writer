@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """Tests for scitex_writer._annotations._emit (the emit seam).
 
-The scitex-todo rail is OPTIONAL — tests that assert a comment was posted
-``pytest.importorskip("scitex_todo")`` so they skip where the dep is
-absent (e.g. CI) and run where present. NO mock of scitex_todo
+The scitex-cards rail is OPTIONAL — tests that assert a comment was posted
+``pytest.importorskip("scitex_cards")`` so they skip where the dep is
+absent (e.g. CI) and run where present. NO mock of scitex_cards
 (STX-NM002). Real tmp store isolates the shared ``tasks.yaml``. One assert
 per test (STX-TQ007); no monkeypatch (PA-306).
 """
@@ -25,9 +25,9 @@ def _annotation(text: str = "fix this claim") -> Annotation:
 
 @pytest.fixture
 def todo_store(tmp_path):
-    """A real tmp scitex-todo store seeded with the owning card."""
-    pytest.importorskip("scitex_todo")
-    from scitex_todo import add_task
+    """A real tmp scitex-cards store seeded with the owning card."""
+    pytest.importorskip("scitex_cards")
+    from scitex_cards import add_task
 
     store = tmp_path / "tasks.yaml"
     add_task(
@@ -92,7 +92,7 @@ def test_emit_reports_notified_true_with_seeded_card(tmp_path, todo_store):
 
 def test_emit_posts_comment_to_owning_card(tmp_path, todo_store):
     # Arrange
-    from scitex_todo import get_task
+    from scitex_cards import get_task
 
     db = tmp_path / "writer.db"
     emit(
