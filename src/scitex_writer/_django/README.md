@@ -38,7 +38,7 @@ scitex-writer gui ./my-paper
 ```
 
 Launches a local Django server bound to `_django.settings`. The project path is
-passed via `?working_dir=<path>` query param or the `WRITER_WORKING_DIR` env
+passed via `?working_dir=<path>` query param or the `SCITEX_WRITER_WORKING_DIR` env
 var.
 
 ## Cloud usage (consumption pattern)
@@ -107,8 +107,12 @@ Render the template with `{"api_base": "/writer/"}` in the cloud view.
 | POST   | `/api/claims/render`         | handle_render_claims   |
 
 All endpoints resolve `working_dir` from `?working_dir=` or the
-`WRITER_WORKING_DIR` env var. Cloud deployments inject it server-side from the
-authenticated user's current project.
+`SCITEX_WRITER_WORKING_DIR` env var. Cloud deployments inject it server-side
+from the authenticated user's current project.
+
+The unprefixed `WRITER_WORKING_DIR` / `WRITER_DJANGO_SECRET` spellings are
+retired. They are not ignored: setting one without its `SCITEX_WRITER_`
+replacement raises at startup, naming the replacement (`_legacy_env.py`).
 
 ## Viewer module (PR2)
 
