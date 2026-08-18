@@ -452,3 +452,63 @@ def test_signature_unverifiable_without_pdftotext_warns_not_fails(tmp_path):
                 "--pdf", str(tmp_path / "out.pdf"), use_fake=False)
     # Assert
     assert (proc.returncode == 0) and ("cannot verify it rendered" in proc.stdout)
+
+
+# ============================================================================
+# raw macro dump (a preamble block that TYPESET itself instead of defining)
+# ============================================================================
+
+#: Page 1 of manuscript.pdf as pypdf actually extracted it on 2026-08-18 from a
+#: stock scaffold, kept verbatim rather than idealised. The \x1c is the fi
+#: LIGATURE: "ifundefined" does not survive extraction as that word, which is
+#: why the detector keys on @-between-letters and not on macro names.
+_PDF_TEXT_MACRO_DUMP = (
+    "claim@maybecolor[2]ifunde\x1cnedclew@hex@12ifunde\x1cned"
+    "ifclewpresmarkers2hEx@#1\\ClEw@22\n1"
+)
+
+
+def test_raw_macro_dump_in_pdf_text_fails(tmp_path):
+    """LaTeX internals typeset into the PDF -> FAIL, naming the token.
+
+    The regression this gate was blind to: a claims block inlined into the BODY
+    argument of \\IfFileExists tokenized with @ still catcode 12, so it typeset
+    a page of macro noise ahead of the title page. It carries no signature
+    sentinel and no [claim:...] placeholder, so every other check passed it."""
+    # Arrange
+    _write(tmp_path, "compiled.tex", _TEX_0)
+    _write(tmp_path, "out.pdf", "%PDF-1.5\n")
+    # Act
+    proc = _run(tmp_path, "--compiled-tex", str(tmp_path / "compiled.tex"),
+                "--pdf", str(tmp_path / "out.pdf"), rows=0,
+                pdf_text=_PDF_TEXT_MACRO_DUMP)
+    # Assert
+    assert (proc.returncode == 1) and ("claim@maybecolor" in proc.stdout)
+
+
+def test_email_address_is_not_a_macro_dump(tmp_path):
+    """A corresponding-author email is the one legitimate @-between-letters in
+    a manuscript and must not trip the check."""
+    # Arrange
+    _write(tmp_path, "compiled.tex", _TEX_0)
+    _write(tmp_path, "out.pdf", "%PDF-1.5\n")
+    # Act
+    proc = _run(tmp_path, "--compiled-tex", str(tmp_path / "compiled.tex"),
+                "--pdf", str(tmp_path / "out.pdf"), rows=0,
+                pdf_text="Correspondence to jane.doe@university.edu.")
+    # Assert
+    assert proc.returncode == 0
+
+
+def test_clean_pdf_text_passes_macro_dump_check(tmp_path):
+    """Ordinary rendered prose -> pass. Positive control for the two above: if
+    this failed, the checks above would pass for the wrong reason."""
+    # Arrange
+    _write(tmp_path, "compiled.tex", _TEX_0)
+    _write(tmp_path, "out.pdf", "%PDF-1.5\n")
+    # Act
+    proc = _run(tmp_path, "--compiled-tex", str(tmp_path / "compiled.tex"),
+                "--pdf", str(tmp_path / "out.pdf"), rows=0,
+                pdf_text="Journal Name Here\nYour Manuscript Title Here\nAbstract")
+    # Assert
+    assert proc.returncode == 0

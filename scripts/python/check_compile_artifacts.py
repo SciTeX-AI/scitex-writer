@@ -113,6 +113,31 @@ _SIGNATURE_PDF_TEXT = "Compiled by SciTeX Writer"
 # that resolved to nothing, whatever the .tex-level checks believed.
 _CLAIM_PLACEHOLDER_RE = re.compile(r"\[claim:[^\]\s]{1,80}\]")
 
+# Raw macro dump: a preamble block whose @-macros were tokenized with @ still
+# catcode 12 does not DEFINE anything -- it TYPESETS, putting a page of LaTeX
+# internals into the PDF ahead of the title page.
+#
+# Measured 2026-08-18 on a stock scaffold: claims_rendered.tex was inlined into
+# the BODY argument of \IfFileExists, so its own \makeatletter ran after the
+# body had already been tokenized, and page 1 of manuscript.pdf read
+#   claim@maybecolor[2]ifunde<fi>nedclew@hex@12ifunde<fi>nedifclewpresmarkers...
+#
+# THE DETECTOR IS "@ BETWEEN LETTERS", NOT A LIST OF MACRO NAMES. Two reasons,
+# both measured on that PDF. First, the macros that survive as control
+# sequences are exactly the ones WITHOUT @ (\providecommand, \makeatletter),
+# so a name list matches nothing -- only the @-bearing names leak, because the
+# @ is what breaks them. Second, LIGATURES CORRUPT THE NEEDLE: "ifundefined"
+# extracts as "ifunde\x1cned" because the fi ligature is one glyph, so a plain
+# substring search for the word silently finds nothing and the gate reports
+# clean. An @ flanked by letters survives ligature substitution and is not
+# something a rendered manuscript otherwise contains.
+_MACRO_AT_RE = re.compile(r"[A-Za-z0-9]*[A-Za-z]@[A-Za-z][A-Za-z0-9@]*")
+
+# The one legitimate source of @-between-letters in a manuscript. Excluded by
+# subtraction rather than by a cleverer single pattern, so the rule above stays
+# readable and the exception stays visible.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
 
 def log_pass(msg):
     global PASS_COUNT
@@ -321,6 +346,40 @@ def check_claim_placeholders(pdf_text, report):
         log_pass("no literal [claim:...] placeholders in the PDF text")
 
 
+def check_no_raw_macro_dump(pdf_text, report):
+    """TERTIARY: no LaTeX internals may be TYPESET into the rendered PDF.
+
+    Distinct from every other check here: those ask whether something that
+    SHOULD be in the PDF is missing. This asks whether something that should
+    never be in a PDF is present -- a preamble block that typeset itself
+    instead of defining macros. The existing checks cannot see it. It carries
+    no signature sentinel and no [claim:...] placeholder, so a manuscript whose
+    first page is solid macro noise passed this gate clean."""
+    if pdf_text is None:
+        # Poppler-absent skip is already reported by the signature check.
+        return
+    without_emails = _EMAIL_RE.sub(" ", pdf_text)
+    # Report the WHOLE offending token, not a fixed-width slice: the message is
+    # what a human reads to find the block, and "m@maybecolor[2]ifunde" starting
+    # mid-word is measurably harder to trace back than "claim@maybecolor".
+    hits = _dedupe(_MACRO_AT_RE.findall(without_emails))
+    if hits:
+        report(
+            f"{len(hits)} LaTeX internal(s) TYPESET into the PDF instead of "
+            f"being defined -- a preamble block dumped as raw text: "
+            f"{_fmt_names(hits)}"
+        )
+        log_detail(
+            "fix: the block was inlined into a MACRO-ARGUMENT BODY (typically "
+            "\\IfFileExists{f}{\\input f}{}), so its \\makeatletter ran after "
+            "the body was already tokenized and @ was still catcode 12. Use a "
+            "plain top-level \\input; the flattener already skips a missing "
+            "non-style file before LaTeX runs."
+        )
+    else:
+        log_pass("no raw LaTeX internals typeset into the PDF")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Post-compile verification gate: fail loud on a deficient "
@@ -395,6 +454,7 @@ def main():
     pdf_text = extract_pdf_text(args.pdf) if args.pdf else None
     check_signature_rendered(_read_raw_tex(args.compiled_tex), pdf_text, report)
     check_claim_placeholders(pdf_text, report)
+    check_no_raw_macro_dump(pdf_text, report)
 
     print()
     print(
