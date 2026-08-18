@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **Branch protection must move with this.** The reusable's checks are named `<caller job id> / <job name>`, so `develop` now sees `pytest-matrix / pytest-matrix-on-ubuntu-py3.NN` where it required the unprefixed `pytest-matrix-on-ubuntu-py3.NN`. This repo has already paid for that mistake once — 2.41.0 records protection naming contexts no check run ever produced, which made every PR unmergeable through the front door.
 
+- **Two scitex-dev imports had been broken for an unknown length of time, and the gate above found them on its first honest run.** `scitex_dev.skills` and `scitex_dev.types` no longer exist — `list_skills`/`get_skill` moved to `scitex_dev.ecosystem`, and `RESULT_SCHEMA` is on the top-level package. Both call sites are repointed:
+  - `_mcp/tools/skills.py` — the `writer_skills_list` and `writer_skills_get` MCP tools were dead against any current scitex-dev.
+  - `_cli/mcp.py` — `scitex-writer mcp ... --json` raised on the import.
+
+  Under the old `importorskip(<full path>)` these were reported as SKIPPED and the suite was green. This is exactly the failure class PS-140 describes, caught the first time the gate was allowed to fail.
+
+  **And the error message was lying about the cause.** Both MCP tools wrapped the import in `except ImportError: "scitex-dev not installed"` — so once the symbol moved, they reported an absent package that was sitting right there, sending the reader to `pip show scitex-dev` and then off to debug something else. The handler now distinguishes absent from moved and names the remedy for each: install it, versus update the call site.
+
 - **The cross-package import gate stops turning the failure it exists to catch into a skip** (PS-140). It called `pytest.importorskip(<full dotted path>)`, so a peer that renamed a submodule raised `ModuleNotFoundError`, was skipped, and reported green. It now skips on the ROOT package — a legitimately absent optional peer still skips — and hard-imports the full path, so a peer that is present must import at the exact path writer references.
 
 ## [2.41.0] - 2026-07-22
