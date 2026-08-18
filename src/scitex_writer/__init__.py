@@ -76,6 +76,7 @@ _LAZY_SUBMODULES = {
     "prompts": ".prompts",
     "tables": ".tables",
     "update": ".update",
+    "workspace_layout": ".workspace_layout",
 }
 
 # Public symbols → (submodule, attribute-in-submodule).
@@ -225,6 +226,7 @@ __all__ = [
     "prompts",
     "migration",
     "update",
+    "workspace_layout",
     # Writer class
     "Writer",
     "ensure_workspace",

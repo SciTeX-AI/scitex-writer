@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from ._core._branding import get_mcp_server_name
-from ._mcp.tools import register_all_tools
-from ._usage import get_usage
+from .._core._branding import get_mcp_server_name
+from .tools import register_all_tools
+from .._usage import get_usage
 
 # =============================================================================
 # FastMCP Server (with branding support)
