@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0] - 2026-08-18
+
 ### Removed
 - **The unprefixed `WRITER_WORKING_DIR` / `WRITER_DJANGO_SECRET` environment variables are retired.** The fleet convention is `SCITEX_WRITER_<X>`; both were read under a bare `WRITER_` name as well, "for one deprecation cycle" — a promise recorded only in a source comment and never announced here, so the cycle was never actually communicated to anyone. It is announced now, and ended in the same breath, which is the honest version of a deprecation nobody was told about.
 
