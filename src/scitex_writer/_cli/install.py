@@ -43,12 +43,22 @@ import click
 # Layout
 # ---------------------------------------------------------------------------
 
-# Recipe files ship in the repo tree at ``scripts/containers/<target>.def``.
-# New sub-tools register here only — the install dispatcher reads from this
-# dict so a single addition lights up the CLI choice + tests in one shot.
-_RECIPES_DIR = (
-    Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "containers"
-)
+# Recipe files ship INSIDE the package, as package data next to this module.
+#
+# They used to live at the repo root in ``scripts/containers/`` and be found by
+# walking ``__file__`` up four levels. That arithmetic describes the SOURCE
+# checkout and nothing else: installed, the same four hops land on
+# ``.../python3.12/scripts/containers`` — and the wheel packages
+# ``src/scitex_writer`` only, so the recipes were never in the distribution at
+# any path. Measured 2026-08-18 against a real pip install:
+#
+#     $ scitex-writer containers install texlive --dry-run
+#     Error: recipe not found: /opt/venv-sac/lib/python3.12/scripts/containers/texlive.def
+#
+# i.e. the verb was dead for every user who did not have a checkout, while
+# working perfectly for every developer who did. Shipping the recipes as
+# package data is what makes the two the same program.
+_RECIPES_DIR = Path(__file__).resolve().parent / "container_recipes"
 
 _SUB_TOOLS: dict[str, str] = {
     "texlive": "texlive.def",
@@ -152,10 +162,17 @@ def _run_install(target: str, *, yes: bool, force: bool, dry_run: bool) -> None:
     """
     recipe = _resolve_recipe(target)
     if not recipe.is_file():
+        # A missing recipe here means the DISTRIBUTION is broken, not the
+        # user's setup — the file is package data and travels with the wheel.
+        # Say that, so nobody goes looking for a directory to create.
         raise click.UsageError(
-            f"recipe not found: {recipe}. Re-check the install set "
-            f"in src/scitex_writer/_cli/install.py:_SUB_TOOLS or the "
-            f"scripts/containers/ tree."
+            f"recipe not found: {recipe}\n"
+            f"This file ships as package data inside scitex-writer, so its "
+            f"absence means the installed distribution is incomplete rather "
+            f"than anything being misconfigured locally.\n"
+            f"Reinstall with `uv pip install --force-reinstall scitex-writer`, "
+            f"and if it is still missing please report it — the packaging "
+            f"gate should have caught this before release."
         )
 
     output_dir = _output_dir()

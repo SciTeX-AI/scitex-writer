@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`scitex-writer containers install texlive` was dead for every pip-installed user.** Measured 2026-08-18 against a real install:
+
+  ```
+  $ scitex-writer containers install texlive --dry-run
+  Error: recipe not found: /opt/venv-sac/lib/python3.12/scripts/containers/texlive.def
+  ```
+
+  `_RECIPES_DIR` walked `__file__` up four levels to find `scripts/containers/` — arithmetic that describes the source checkout and nothing else. Installed, the four hops land on `.../python3.12/`, and the wheel packages `src/scitex_writer` only, so the recipes were never in the distribution at any path. The `.def` recipes now ship as package data at `src/scitex_writer/_cli/container_recipes/`, verified present in a built wheel.
+
+  The verb worked perfectly for every developer and failed for every user, which is also why no test caught it: `pytest-matrix` installs with `pip install -e .`, so its tests resolved the checkout, where the old path was valid — a gate that could not fail. The `sdist-wheel-import` workflow now resolves every registered recipe from a wheel installed into a clean venv, which is the only place the question can be asked honestly.
+
+  A missing recipe also no longer reads as a local misconfiguration. It is package data, so its absence means the distribution is incomplete; the error says that and points at reinstalling, instead of naming a directory the user might try to create.
+
 ## [2.41.0] - 2026-07-22
 
 ### Added
