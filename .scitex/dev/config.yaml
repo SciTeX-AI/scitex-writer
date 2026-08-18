@@ -7,3 +7,20 @@
 project-type:
   - pip
   - special
+
+audit:
+  skip-rules:
+    "§6a": >-
+      FALSE POSITIVE ON A MIGRATION GUARD, not a deferral. Writer no longer
+      READS the bare-prefixed WRITER_WORKING_DIR / WRITER_DJANGO_SECRET — the
+      fallbacks were deleted, and every read is SCITEX_WRITER_-prefixed. The
+      two names survive only inside src/scitex_writer/_django/_legacy_env.py,
+      whose entire job is to REFUSE them: setting one without its replacement
+      raises at startup naming the replacement, so a stale launcher gets an
+      error instead of a writer that silently ignores the directory it was
+      given. §6a scans for the literal and cannot distinguish "reads this env
+      var" from "rejects this env var by name", so it fires on the very code
+      that completes the migration. Removing the guard to satisfy the rule
+      would trade a green audit for a silent break — the deletion this file
+      exists to prevent. Reported to scitex-dev; drop this skip once the rule
+      can tell the two apart, and re-run to confirm it reports as removable.

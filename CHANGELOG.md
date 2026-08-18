@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **The unprefixed `WRITER_WORKING_DIR` / `WRITER_DJANGO_SECRET` environment variables are retired.** The fleet convention is `SCITEX_WRITER_<X>`; both were read under a bare `WRITER_` name as well, "for one deprecation cycle" — a promise recorded only in a source comment and never announced here, so the cycle was never actually communicated to anyone. It is announced now, and ended in the same breath, which is the honest version of a deprecation nobody was told about.
+
+  They are **retired, not ignored**. Setting a retired name without its `SCITEX_WRITER_` replacement raises at startup and names the replacement. A plain deletion would have left someone's launcher exporting `WRITER_WORKING_DIR` to a writer that starts cleanly and silently disregards the directory they asked for — a setting accepted and discarded, which is worse than either honouring it or refusing it. Exporting both is fine; that is what a migration in flight looks like.
+
+### Changed
+- `.scitex/dev/config.yaml` declares one audit skip rule, `§6a`, with its reason. It is a **false positive on the migration guard above**, not deferred debt: writer no longer reads either bare name, and the two strings survive only inside the module whose job is to reject them. The rule scans for the literal and cannot tell "reads this env var" from "refuses this env var by name", so it fires on the code that completes the migration. Deleting the guard to satisfy it would trade a green audit for a silent break. Reported to scitex-dev; the skip goes when the rule can distinguish the two, and `audit-all` prints the masked inventory in the meantime so it is never silent.
+
 ## [2.41.0] - 2026-07-22
 
 ### Added
