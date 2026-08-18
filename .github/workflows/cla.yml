@@ -1,20 +1,9 @@
 name: CLA Assistant
 
-# Calls the org-provided reusable instead of re-implementing it (PS-231).
-#
-# The reusable derives the repository and the CLA.md URL from
-# `${{ github.repository }}`, which for a workflow_call run resolves to the
-# CALLING repository — so nothing here needs to name scitex-writer.
-#
-# `owner_allowlist` IS passed: writer's list carries `LLEmacs` in addition to
-# the org default `bot*,ywatanabe1989`. Dropping it would start demanding a CLA
-# signature from a contributor who has been allowlisted here since this
-# workflow was written.
-#
-# GH_PERSONAL_ACCESS_TOKEN is mapped EXPLICITLY rather than via
-# `secrets: inherit` — inherit forwards every secret this repo holds into the
-# reusable, and writer holds CLAUDE_CODE_CREDENTIALS_JSON, which the CLA action
-# has no business seeing (PS-224).
+# Org-level reusable-workflow caller (scitex-ai/.github; fleet CI
+# unification wave 2). Triggers/permissions preserved verbatim from the
+# prior local file; the job bodies live org-side so they cannot drift
+# per-repo.
 
 on:
   issue_comment:
@@ -22,15 +11,22 @@ on:
   pull_request_target:
     types: [opened, closed, synchronize]
 
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
 jobs:
-  CLAssistant:
+  call:
     uses: scitex-ai/.github/.github/workflows/cla.yml@main
-    permissions:
-      actions: write
-      contents: write
-      pull-requests: write
-      statuses: write
     with:
       owner_allowlist: "bot*,ywatanabe1989,LLEmacs"
+    # NAMED SECRET, not `inherit`. This caller runs on `issue_comment` and
+    # `pull_request_target` -- both unauthenticated on a public repo -- and
+    # `secrets: inherit` forwards EVERY secret this repo holds into a job an
+    # outsider can start, on the shared self-hosted runner the callee targets.
+    # Neither file shows that on its own: the caller names no runs-on, so the
+    # destination lives in the callee. Pass only the secret the callee declares.
     secrets:
       GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
