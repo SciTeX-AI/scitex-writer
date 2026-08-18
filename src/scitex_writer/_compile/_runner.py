@@ -358,13 +358,22 @@ def run_compile(
         progress(95, "Parsing compilation logs...")
         errors, warnings = parse_output(result.stdout, result.stderr, log_file=log_file)
 
-        # A promoted run is a success ONLY if a real PDF with pages > 0 exists.
-        # We re-derive that here rather than trusting the exit code, so a shell
-        # that claims 3 without an artifact can never become a silent success:
-        # no PDF (or a zero-page husk) still FAILS, exactly like any other
-        # non-zero exit. This is the "produced a PDF" vs "produced nothing" line.
+        # A run is a success ONLY if a real PDF with pages > 0 exists. We
+        # re-derive that here rather than trusting the exit code, so a shell
+        # that claims success without an artifact can never become a silent
+        # success: no PDF (or a zero-page husk) FAILS. This is the "produced a
+        # PDF" vs "produced nothing" line.
+        #
+        # THE CHECK COVERS THE CLEAN PATH TOO, AND USED NOT TO. It ran only
+        # under `if promoted`, so exit 3 was held to "prove you made a PDF"
+        # while exit 0 was taken at its word -- the DEGRADED path verified more
+        # strictly than the healthy one. A clean exit over a zero-page husk was
+        # therefore reported as success by the one branch that never looked,
+        # which is the false-success shape this guard exists to prevent
+        # (nv-incident-compile-false-success-deficient-pdf-20260630, which asked
+        # for a page-count check and only ever got half of one).
         success = result.returncode == 0
-        if promoted:
+        if success or promoted:
             pages = (
                 produced_page_count(output_pdf, _doc_latex_log(project_dir, doc_type))
                 if output_pdf
@@ -372,14 +381,22 @@ def run_compile(
             )
             if pages > 0:
                 success = True
-                warnings.insert(0, _PROMOTED_WARNING.format(pages=pages))
-                log(f"[WARNING] {_PROMOTED_WARNING.format(pages=pages)}")
+                if promoted:
+                    warnings.insert(0, _PROMOTED_WARNING.format(pages=pages))
+                    log(f"[WARNING] {_PROMOTED_WARNING.format(pages=pages)}")
             else:
+                success = False
                 output_pdf = None
                 errors.insert(
                     0,
-                    "Compile reported a promoted PDF (exit 3) but no PDF with "
-                    "pages > 0 exists. Treating as a FAILURE.",
+                    (
+                        "Compile reported a promoted PDF (exit 3) but no PDF "
+                        "with pages > 0 exists. Treating as a FAILURE."
+                        if promoted
+                        else "Compile exited 0 but produced no PDF with "
+                        "pages > 0. Treating as a FAILURE: a clean exit code "
+                        "is not evidence that an artifact exists."
+                    ),
                 )
                 log(f"[ERROR] {errors[0]}")
 
