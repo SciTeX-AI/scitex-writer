@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """Tests for scitex_writer._annotations._service (POST orchestration).
 
-Real SQLite in ``tmp_path``; the scitex-todo rail is optional so the
-notified-True path ``pytest.importorskip("scitex_todo")``. No mocks
+Real SQLite in ``tmp_path``; the scitex-cards rail is optional so the
+notified-True path ``pytest.importorskip("scitex_cards")``. No mocks
 (STX-NM002); one assert per test (STX-TQ007); no monkeypatch (PA-306).
 """
 
@@ -21,9 +21,9 @@ def _body(text: str = "please clarify") -> dict:
 
 @pytest.fixture
 def todo_store(tmp_path):
-    """A real tmp scitex-todo store seeded with the owning card."""
-    pytest.importorskip("scitex_todo")
-    from scitex_todo import add_task
+    """A real tmp scitex-cards store seeded with the owning card."""
+    pytest.importorskip("scitex_cards")
+    from scitex_cards import add_task
 
     store = tmp_path / "tasks.yaml"
     add_task(
