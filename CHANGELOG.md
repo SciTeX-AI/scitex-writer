@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **And the error message was lying about the cause.** Both MCP tools wrapped the import in `except ImportError: "scitex-dev not installed"` — so once the symbol moved, they reported an absent package that was sitting right there, sending the reader to `pip show scitex-dev` and then off to debug something else. The handler now distinguishes absent from moved and names the remedy for each: install it, versus update the call site.
 
 - **The cross-package import gate stops turning the failure it exists to catch into a skip** (PS-140). It called `pytest.importorskip(<full dotted path>)`, so a peer that renamed a submodule raised `ModuleNotFoundError`, was skipped, and reported green. It now skips on the ROOT package — a legitimately absent optional peer still skips — and hard-imports the full path, so a peer that is present must import at the exact path writer references.
+### Fixed
+- **`scitex-writer containers install texlive` was dead for every pip-installed user.** Measured 2026-08-18 against a real install:
+
+  ```
+  $ scitex-writer containers install texlive --dry-run
+  Error: recipe not found: /opt/venv-sac/lib/python3.12/scripts/containers/texlive.def
+  ```
+
+  `_RECIPES_DIR` walked `__file__` up four levels to find `scripts/containers/` — arithmetic that describes the source checkout and nothing else. Installed, the four hops land on `.../python3.12/`, and the wheel packages `src/scitex_writer` only, so the recipes were never in the distribution at any path. The `.def` recipes now ship as package data at `src/scitex_writer/_cli/container_recipes/`, verified present in a built wheel.
+
+  The verb worked perfectly for every developer and failed for every user, which is also why no test caught it: `pytest-matrix` installs with `pip install -e .`, so its tests resolved the checkout, where the old path was valid — a gate that could not fail. The `sdist-wheel-import` workflow now resolves every registered recipe from a wheel installed into a clean venv, which is the only place the question can be asked honestly.
+
+  A missing recipe also no longer reads as a local misconfiguration. It is package data, so its absence means the distribution is incomplete; the error says that and points at reinstalling, instead of naming a directory the user might try to create.
 ### Added
 - **`scitex_writer.workspace_layout` — writer's project layout is now published, not private.** A writer project has two roots: the project directory the user names, and the workspace at `<project>/.scitex/writer/` where writer actually keeps `scripts/`, `config/` and `01_manuscript/`. Writer had never exported that fact, so a downstream caller had no choice but to spell the path out by hand — and got it wrong. Measured in production 2026-08-17, full compilation was dead for every user with `bash: /workspace/scripts/shell/compile_manuscript.sh: No such file or directory`; the script existed, one hidden segment down. The new module exports `WORKSPACE_RELPATH`, `SHELL_SCRIPTS_RELPATH`, `COMPILE_SCRIPT_RELPATHS`, `workspace_dir()` and `compile_script_relpath()`, so the layout has exactly one statement of itself.
 
