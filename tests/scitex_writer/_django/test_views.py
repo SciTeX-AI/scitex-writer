@@ -623,12 +623,22 @@ import re  # noqa: E402
 
 from scitex_writer._django import views as _views  # noqa: E402
 
+# Both spellings are scraped. `_shell_context` is what the page views call
+# now; `_app_label` is the function underneath it and remains callable
+# directly. A source scrape is the right tool here precisely because the thing
+# being guarded is every FUTURE call site: a runtime check of the two views we
+# already know about would pass while a third page shipped a wrong title.
+# `test_tab_titles_are_declared_at_all` is the positive control — it fails if
+# the pattern stops matching anything, which is how this test noticed the
+# rename instead of quietly passing on an empty list.
+_TAB_TITLE_CALL = re.compile(r'_(?:app_label|shell_context)\("([^"]+)"\)')
+
 
 def test_tab_titles_lead_with_the_scitex_brand():
     # Arrange
     source = inspect.getsource(_views)
     # Act
-    labels = re.findall(r'_app_label\("([^"]+)"\)', source)
+    labels = _TAB_TITLE_CALL.findall(source)
     # Assert
     assert [label for label in labels if not label.startswith("SciTeX ")] == []
 
@@ -637,6 +647,6 @@ def test_tab_titles_are_declared_at_all():
     # Arrange
     source = inspect.getsource(_views)
     # Act
-    labels = re.findall(r'_app_label\("([^"]+)"\)', source)
+    labels = _TAB_TITLE_CALL.findall(source)
     # Assert
     assert labels != []
