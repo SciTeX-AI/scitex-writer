@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scitex_writer.workspace_layout` — writer's project layout is now published, not private.** A writer project has two roots: the project directory the user names, and the workspace at `<project>/.scitex/writer/` where writer actually keeps `scripts/`, `config/` and `01_manuscript/`. Writer had never exported that fact, so a downstream caller had no choice but to spell the path out by hand — and got it wrong. Measured in production 2026-08-17, full compilation was dead for every user with `bash: /workspace/scripts/shell/compile_manuscript.sh: No such file or directory`; the script existed, one hidden segment down. The new module exports `WORKSPACE_RELPATH`, `SHELL_SCRIPTS_RELPATH`, `COMPILE_SCRIPT_RELPATHS`, `workspace_dir()` and `compile_script_relpath()`, so the layout has exactly one statement of itself.
+
+  Deliberately, nothing here guesses which root it was handed: `workspace_dir()` always appends the segment. The scitex-writer repository is itself a workspace that *also* contains a `.scitex/writer/` directory, so no heuristic can tell the two roots apart from a path alone, and one that appeared to would be wrong precisely where it was trusted.
+
+### Fixed
+- **A missing compile script now says which root it was resolved against.** `run_compile` reported only `Compilation script not found: <path>`, which reads as a missing file when the actual cause is almost always a project root supplied where a workspace was expected — the same confusion above, and invisible from the path alone. The error now names the relative path, the base directory it was joined to, the workspace one segment down, and `ensure_workspace()` as the remedy. An unknown `doc_type` is also reported as such instead of falling through the not-found branch.
+
+### Changed
+- `_compile/_runner.py` no longer spells `scripts/shell/compile_<doc_type>.sh` out three times; it composes the published relpath. Behaviour is unchanged — the function still resolves against the workspace it is given — and 27 new drift guards in `tests/scitex_writer/test_workspace_layout.py` fail if the published layout ever stops agreeing with `ensure_workspace()`, with the scripts that exist in this repository, or with the runner.
+
 ## [2.41.0] - 2026-07-22
 
 ### Added

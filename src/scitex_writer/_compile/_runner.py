@@ -19,6 +19,11 @@ from typing import Callable, Optional
 from .._dataclasses import CompilationResult
 from .._dataclasses.config import DOC_TYPE_DIRS
 from .._utils._pdf_pages import produced_page_count
+from ..workspace_layout import (
+    COMPILE_SCRIPT_RELPATHS,
+    WORKSPACE_RELPATH,
+    compile_script_relpath,
+)
 from ._execute import _execute_with_callbacks, _run_sh_command
 from ._parser import parse_output
 from ._validator import validate_before_compile
@@ -55,28 +60,36 @@ def _doc_latex_log(project_dir: Path, doc_type: str) -> Path:
     return project_dir / DOC_TYPE_DIRS[doc_type] / "logs" / f"{doc_type}.log"
 
 
-def _get_compile_script(project_dir: Path, doc_type: str) -> Path:
+def _get_compile_script(project_dir: Path, doc_type: str) -> Optional[Path]:
     """
     Get compile script path for document type.
+
+    Delegates to :mod:`scitex_writer.workspace_layout`, which is the published
+    single source of truth for where writer keeps things. It used to spell the
+    ``scripts/shell/compile_<doc_type>.sh`` tail out here, three times; that
+    private copy is what a downstream caller had to guess at, and guessing it
+    wrong is what made full compilation fail with a bare rc=127.
 
     Parameters
     ----------
     project_dir : Path
-        Path to project directory
+        Path to the writer WORKSPACE -- the directory holding ``scripts/``,
+        ``config/`` and ``01_manuscript/``. For a project root that is
+        ``scitex_writer.workspace_layout.workspace_dir(project_root)``, not the
+        root itself.
     doc_type : str
         Document type ('manuscript', 'supplementary', 'revision')
 
     Returns
     -------
-    Path
-        Path to compilation script
+    Optional[Path]
+        Path to the compilation script, or ``None`` for an unknown
+        ``doc_type`` -- the shape ``run_compile`` already handles.
     """
-    script_map = {
-        "manuscript": project_dir / "scripts" / "shell" / "compile_manuscript.sh",
-        "supplementary": project_dir / "scripts" / "shell" / "compile_supplementary.sh",
-        "revision": project_dir / "scripts" / "shell" / "compile_revision.sh",
-    }
-    return script_map.get(doc_type)
+    try:
+        return project_dir / compile_script_relpath(doc_type)
+    except ValueError:
+        return None
 
 
 def _find_output_files(
@@ -217,8 +230,33 @@ def run_compile(
 
     # Get compile script
     compile_script = _get_compile_script(project_dir, doc_type)
-    if not compile_script or not compile_script.exists():
-        error_msg = f"[ERROR] Compilation script not found: {compile_script}"
+    if not compile_script:
+        error_msg = (
+            f"[ERROR] Unknown doc_type {doc_type!r}; expected one of "
+            f"{sorted(COMPILE_SCRIPT_RELPATHS)}"
+        )
+        log(error_msg)
+        return CompilationResult(
+            success=False,
+            exit_code=127,
+            stdout="",
+            stderr=error_msg,
+            duration=0.0,
+        )
+    if not compile_script.exists():
+        # Name the root we resolved AGAINST, not just the path we missed. The
+        # commonest cause is being handed a project root where a workspace was
+        # expected, and the absolute path alone cannot show that -- it looks
+        # like a missing file rather than a wrong base directory.
+        error_msg = (
+            f"[ERROR] Compilation script not found: {compile_script}\n"
+            f"        Resolved as <workspace>/{compile_script_relpath(doc_type)} "
+            f"with <workspace> = {project_dir}\n"
+            f"        If that is a PROJECT root, the workspace is one segment "
+            f"down: {project_dir / WORKSPACE_RELPATH}\n"
+            f"        If the workspace is right but empty, create it with "
+            f"scitex_writer.ensure_workspace(<project root>)."
+        )
         log(error_msg)
         return CompilationResult(
             success=False,
