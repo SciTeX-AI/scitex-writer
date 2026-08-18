@@ -33,6 +33,7 @@ CROSS_PACKAGE_IMPORTS = [
     "scitex_scholar",
     "scitex_todo",
     "scitex_ui",
+    "scitex_ui.branding",
 ]
 # ===== END AUTO-GENERATED =====
 
