@@ -50,6 +50,7 @@ __all__ = [
     "COMPILE_SCRIPT_RELPATHS",
     "workspace_dir",
     "compile_script_relpath",
+    "compile_script",
 ]
 
 PathLike = Union[str, Path]
@@ -141,6 +142,51 @@ def compile_script_relpath(doc_type: str) -> Path:
             f"unknown doc_type {doc_type!r}; "
             f"choose from {sorted(COMPILE_SCRIPT_RELPATHS)}"
         ) from None
+
+
+def compile_script(project_root: PathLike, doc_type: str) -> Path:
+    """The absolute compile script path for ``doc_type`` inside a PROJECT ROOT.
+
+    The one call a caller outside this package should need: hand it the
+    directory the user named, get back the script to run. Nothing about
+    ``.scitex/writer`` or ``scripts/shell`` has to be known — or re-typed —
+    anywhere else. That re-typing is what killed full compilation for every
+    user in 2026-08.
+
+    This COMPOSES the two halves above; it does not inspect anything. A
+    workspace passed here yields a nested path that does not exist, which is
+    the intended failure — see the module docstring on why nothing here tries
+    to detect which root it was handed.
+
+    The returned path is NOT checked for existence. A caller about to execute
+    it should say so loudly when it is missing, naming both the path and the
+    root it was derived from: ``bash: … No such file or directory`` names the
+    symptom and hides which of the two roots the caller was holding, and that
+    is precisely how the original defect read in production.
+
+    Parameters
+    ----------
+    project_root : str or pathlib.Path
+        The project root — the directory the user names, NOT the workspace.
+    doc_type : str
+        One of ``manuscript``, ``supplementary``, ``revision``.
+
+    Returns
+    -------
+    pathlib.Path
+        Absolute path to the compile script.
+
+    Raises
+    ------
+    ValueError
+        If ``doc_type`` is not a known document type.
+
+    Examples
+    --------
+    >>> compile_script("/workspace", "manuscript").as_posix()
+    '/workspace/.scitex/writer/scripts/shell/compile_manuscript.sh'
+    """
+    return workspace_dir(project_root) / compile_script_relpath(doc_type)
 
 
 # EOF

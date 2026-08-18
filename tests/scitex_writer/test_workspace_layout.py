@@ -29,6 +29,7 @@ from scitex_writer.workspace_layout import (
     COMPILE_SCRIPT_RELPATHS,
     SHELL_SCRIPTS_RELPATH,
     WORKSPACE_RELPATH,
+    compile_script,
     compile_script_relpath,
     workspace_dir,
 )
@@ -197,6 +198,58 @@ def test_compile_script_relpath_error_names_the_offending_value():
     message = _rejection_message(unknown)
     # Assert
     assert unknown in message
+
+
+# ---------------------------------------------------------------------------
+# compile_script — the one call a caller outside this package should need
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("doc_type", DOC_TYPES)
+def test_compile_script_composes_the_two_published_halves(
+    tmp_path: Path, doc_type: str
+):
+    """It must compose, not re-derive — otherwise it is a third statement."""
+    # Arrange
+    expected = workspace_dir(tmp_path) / compile_script_relpath(doc_type)
+    # Act
+    resolved = compile_script(tmp_path, doc_type)
+    # Assert
+    assert resolved == expected
+
+
+def test_compile_script_takes_a_project_root_not_a_workspace(tmp_path: Path):
+    """The whole point: a caller hands over the directory the user named.
+
+    scitex-hub's compile view holds a project root. If it had to know that a
+    workspace segment exists in order to call this, the segment would still be
+    duplicated in hub — which is the defect, not the fix.
+    """
+    # Arrange
+    project_root = tmp_path
+    # Act
+    resolved = compile_script(project_root, "manuscript")
+    # Assert
+    assert resolved == (
+        project_root
+        / ".scitex"
+        / "writer"
+        / "scripts"
+        / "shell"
+        / "compile_manuscript.sh"
+    )
+
+
+def test_compile_script_rejects_an_unknown_doc_type():
+    # Arrange
+    def _call():
+        return compile_script("/tmp/paper", "bogus")
+
+    # Act
+    raised = pytest.raises(ValueError)
+    # Assert
+    with raised:
+        _call()
 
 
 # ---------------------------------------------------------------------------
