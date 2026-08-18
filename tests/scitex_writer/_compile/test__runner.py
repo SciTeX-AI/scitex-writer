@@ -348,6 +348,49 @@ class TestPromotedWithWarningsExitCode:
         # Assert
         assert not result.success
 
+    def test_exit_zero_without_a_pdf_fails(self, valid_project):
+        """A clean exit that produced NOTHING is a false success.
+
+        The mirror of test_exit_three_without_a_pdf_still_fails. The page check
+        used to run only under `if promoted`, so exit 3 had to prove it made a
+        PDF while exit 0 was believed on its word -- the degraded path verified
+        more strictly than the healthy one."""
+        # Arrange: nothing was produced — no PDF is written at all
+        # Act
+        result = run_compile(
+            "manuscript", valid_project, command_runner=_ExitCodeCommandRunner(0)
+        )
+        # Assert
+        assert not result.success
+
+    def test_exit_zero_over_a_zero_page_husk_fails(self, valid_project):
+        """A clean exit over a header-only husk is a false success too.
+
+        Distinct from the case above: here a .pdf DOES exist, so an
+        existence-only check passes it. Only a page count catches it."""
+        # Arrange: an aborted run left a header-only husk, no page objects
+        doc_dir = valid_project / "01_manuscript"
+        doc_dir.mkdir(exist_ok=True)
+        (doc_dir / "manuscript.pdf").write_bytes(b"%PDF-1.5\n%%EOF\n")
+        # Act
+        result = run_compile(
+            "manuscript", valid_project, command_runner=_ExitCodeCommandRunner(0)
+        )
+        # Assert
+        assert not result.success
+
+    def test_clean_compile_with_a_real_pdf_still_succeeds(self, valid_project):
+        """Positive control. Without this, the two tests above would pass if
+        the guard rejected EVERY clean compile."""
+        # Arrange
+        _write_promoted_pdf(valid_project)
+        # Act
+        result = run_compile(
+            "manuscript", valid_project, command_runner=_ExitCodeCommandRunner(0)
+        )
+        # Assert
+        assert result.success
+
     def test_genuine_failure_exit_code_still_fails(self, valid_project):
         # Arrange: a stale PDF on disk must not rescue a real failure
         _write_promoted_pdf(valid_project)
