@@ -36,13 +36,12 @@ logger = logging.getLogger(__name__)
 def _get_project(request):
     """Resolve the current project from ?working_dir= or SCITEX_WRITER_WORKING_DIR.
 
-    The unprefixed WRITER_WORKING_DIR spelling is honoured for one
-    deprecation cycle (fleet env-var convention is SCITEX_WRITER_<X>).
+    The unprefixed spelling is retired (fleet convention is
+    SCITEX_WRITER_<X>); ._legacy_env raises at startup rather than letting a
+    stranded one be ignored here.
     """
-    working_dir = (
-        request.GET.get("working_dir")
-        or os.environ.get("SCITEX_WRITER_WORKING_DIR", "")
-        or os.environ.get("WRITER_WORKING_DIR", "")
+    working_dir = request.GET.get("working_dir") or os.environ.get(
+        "SCITEX_WRITER_WORKING_DIR", ""
     )
     if not working_dir:
         return None
@@ -67,6 +66,77 @@ def _app_label(base: str) -> str:
     return f"{base} (standalone)" if mode == "standalone" else base
 
 
+def _favicon_href() -> str:
+    """Writer's own brand mark, for the scitex-ui shell's icon link.
+
+    scitex-ui 0.7.0 made the shell's ``<link rel="icon">`` UNCONDITIONAL,
+    falling back to the shared SciTeX mark when a view supplies no
+    ``favicon_href`` (scitex_ui/templates/scitex_ui/_branding_head.html).
+    Writer supplied none, so every page emitted the shared mark ON TOP OF
+    writer's own links -- untidy rather than broken, since the shell's link
+    precedes ``extra_css`` and ours won.
+
+    Passing this makes the shell emit WRITER's mark, so there is exactly one
+    bare ``rel="icon"``. The sized PNG variants and the apple-touch-icon stay
+    in each template's ``extra_css``: the shell has no way to express
+    ``sizes=`` or ``apple-touch-icon``, and a single shared SVG is not a
+    substitute for a 180x180 home-screen icon.
+    """
+    from django.templatetags.static import static
+
+    return static("writer/favicon.svg")
+
+
+#: Writer fills exactly one pane of the scitex-ui shell — the module pane, where
+#: `.writer-app` mounts. The other three are declared unused so the shell
+#: collapses them and the editor gets the full viewport.
+#:
+#: This USED to be a stylesheet in editor.css targeting
+#: `.workspace-three-col > .ws-ai-pane` and siblings: scitex-ui's private class
+#: names, which they are free to rename and which would have broken writer
+#: silently, with no way for either side to notice. Two of those five selectors
+#: were already wrong by the time they were removed. `panes=` is an API
+#: scitex-ui is obliged not to break, and an unknown key or state raises rather
+#: than quietly leaving a pane visible.
+#:
+#: "unused" EVERYWHERE, with no SCITEX_APP_MODE gate, on scitex-hub's own
+#: answer (card writer-adopt-pane-contract-drop-css-hide-hack-20260718,
+#: 2026-08-02): hub does not embed writer's _django at all — it ships its own
+#: writer app with its own stylesheet and its own `.writer-app-container` — so
+#: there is no cloud caller whose panes this could hide. The old CSS comment
+#: claiming "cloud deployments override this" described a coupling that never
+#: existed.
+_SHELL_PANES = {"ai": "unused", "files": "unused", "viewer": "unused"}
+
+
+def _shell_context(base_title: str) -> dict:
+    """The scitex-ui shell context for a writer page.
+
+    ``shell_context`` sets ``app_label`` from the tool name, which would
+    clobber writer's ``(standalone)`` tab marker, so that key is merged back
+    ON TOP rather than the helper's dict being taken wholesale.
+
+    Parameters
+    ----------
+    base_title : str
+        Tab title before the mode marker, e.g. ``"SciTeX Writer"``.
+
+    Returns
+    -------
+    dict
+        Shell context ready to merge into a template context.
+    """
+    from scitex_ui.branding import shell_context
+
+    context = shell_context(
+        "Writer",
+        favicon_href=_favicon_href(),
+        panes=_SHELL_PANES,
+    )
+    context["app_label"] = _app_label(base_title)
+    return context
+
+
 def editor_page(request):
     """Serve the editor shell page."""
     project = _get_project(request)
@@ -75,9 +145,9 @@ def editor_page(request):
         "writer/editor.html",
         {
             "app_name": "writer",
-            "app_label": _app_label("SciTeX Writer"),
             "project_dir": project_dir,
             "dark_mode": project.dark_mode if project else False,
+            **_shell_context("SciTeX Writer"),
         },
         request=request,
     )
@@ -166,8 +236,8 @@ def viewer_page(request):
         "writer/viewer.html",
         {
             "app_name": "writer",
-            "app_label": _app_label("SciTeX Writer — Viewer"),
             "project_dir": project_dir,
+            **_shell_context("SciTeX Writer — Viewer"),
         },
         request=request,
     )

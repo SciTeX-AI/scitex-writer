@@ -1,22 +1,25 @@
 name: auto-merge-to-develop
 
-# Org-level reusable-workflow caller (scitex-ai/.github; fleet CI
-# unification wave 2). Merge green PRs that TARGET develop, the moment
-# their checks complete - job body lives org-side so it cannot drift
-# per-repo. GitHub reads check_suite-triggered workflows from the
-# DEFAULT branch (main), so this caller stub must live on main; it acts
-# ONLY on PRs whose base is develop.
+# Calls the org-provided reusable instead of re-implementing it (PS-231).
+#
+# Merges green PRs that TARGET develop as soon as their checks complete.
+# GitHub reads check_suite-triggered workflows from the DEFAULT branch (main),
+# so this file must live on main even though it acts only on PRs based on
+# develop.
+#
+# Every input is left at its default: the body replaced here did exactly what
+# the reusable does — skip drafts, ignore advisory codecov/readthedocs checks,
+# merge when nothing else is pending, and leave the PR open when branch policy
+# blocks the merge.
 
 on:
   check_suite:
     types: [completed]
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   automerge:
     uses: scitex-ai/.github/.github/workflows/auto-merge-to-develop.yml@main
-    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write

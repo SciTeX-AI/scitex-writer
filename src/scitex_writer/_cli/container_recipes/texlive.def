@@ -2,7 +2,7 @@
 # overwrites this file on every re-vendor; fix it upstream in the
 # scitex-writer package instead (local edits are lost, and update-project
 # may set it read-only in the consumer workspace after vendoring).
-# scripts/containers/texlive.def — scitex-writer LaTeX sub-tool SIF.
+# src/scitex_writer/_cli/container_recipes/texlive.def — scitex-writer LaTeX sub-tool SIF.
 #
 # Lean LaTeX environment delivered as an independent, read-only sub-tool
 # SIF for wrapper agents (proj-neurovista, scitex-writer's own compile

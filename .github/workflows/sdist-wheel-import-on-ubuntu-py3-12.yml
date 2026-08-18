@@ -54,3 +54,24 @@ jobs:
           # Guard the exact submodule the outage dropped, so a regression is
           # named rather than surfacing as a generic ImportError elsewhere.
           /tmp/clean/bin/python -c "from scitex_writer._dataclasses.config import WriterConfig; print('WriterConfig OK')"
+      - name: Resolve every shipped container recipe from the installed wheel
+        # The 2026-08-18 outage: `scitex-writer containers install texlive` was
+        # dead for every pip-installed user because the .def recipes sat at the
+        # repo root and the wheel packages src/scitex_writer only. It could not
+        # be caught anywhere else — pytest-matrix installs with `pip install -e .`,
+        # so its tests resolve the CHECKOUT, where the old path was valid. A
+        # gate that cannot fail. This step is the only honest place to ask
+        # whether the DATA shipped, because only here is the tree unavailable.
+        run: |
+          /tmp/clean/bin/python - <<'PY'
+          from scitex_writer._cli.install import _SUB_TOOLS, _resolve_recipe
+          missing = [t for t in _SUB_TOOLS if not _resolve_recipe(t).is_file()]
+          if missing:
+              raise SystemExit(
+                  f"recipes absent from the built wheel: {missing}\n"
+                  f"They are package data under "
+                  f"src/scitex_writer/_cli/container_recipes/; check that "
+                  f"nothing in pyproject's build config excludes them."
+              )
+          print(f"container recipes OK: {sorted(_SUB_TOOLS)}")
+          PY

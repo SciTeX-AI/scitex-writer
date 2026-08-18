@@ -98,7 +98,7 @@ def _swap_recipes_dir(tmp_dir: Path) -> Iterator[None]:
     Same swap/restore discipline as ``home_tmp`` — a tmp pointer is
     real (no mock), and the original is restored on exit even when
     the body raises. Used to cover the "recipe not found" branch
-    without touching the real ``scripts/containers/`` tree.
+    without touching the real shipped recipes.
     """
     saved = inst._RECIPES_DIR
     inst._RECIPES_DIR = tmp_dir
@@ -123,11 +123,54 @@ def test_output_dir_is_under_dotscitex_writer_containers(home_tmp):
 
 
 def test_resolve_recipe_finds_texlive_def_in_scripts_containers():
-    # Arrange — the shipped recipe lives at scripts/containers/texlive.def.
+    # Arrange — the shipped recipe is package data, not a repo-root script.
     # Act
     recipe = inst._resolve_recipe("texlive")
     # Assert
     assert recipe.name == "texlive.def"
+
+
+def test_resolve_recipe_returns_a_path_that_actually_exists():
+    """The old resolution returned a plausible path to nothing.
+
+    ``_RECIPES_DIR`` used to walk ``__file__`` up four levels to the repository
+    root, which is a real directory in a checkout and garbage anywhere else. In
+    a checkout this test would have passed either way; it is here so the pair
+    with ``test_shipped_recipe_lives_inside_the_package`` pins BOTH halves —
+    the file exists, and it exists somewhere that travels with the wheel.
+    """
+    # Arrange
+    recipe = inst._resolve_recipe("texlive")
+    # Act
+    exists = recipe.is_file()
+    # Assert
+    assert exists, f"{recipe} does not exist"
+
+
+@pytest.mark.parametrize("target", sorted(inst._SUB_TOOLS))
+def test_shipped_recipe_lives_inside_the_package(target: str):
+    """Every registered recipe must be package data.
+
+    This is the assertion that would have caught the 2026-08-18 outage:
+    ``scitex-writer containers install texlive`` was dead for every
+    pip-installed user because the recipes sat at the repository root and the
+    wheel packages ``src/scitex_writer`` only.
+
+    It is NOT sufficient on its own — CI installs editable, so a path inside a
+    checkout satisfies it. The honest gate is the ``sdist-wheel-import``
+    workflow, which resolves a recipe from a wheel in a clean venv. This test
+    catches the mistake at authoring time; that workflow catches it at
+    distribution time.
+    """
+    # Arrange
+    package_root = Path(inst.__file__).resolve().parent.parent
+    # Act
+    recipe = inst._resolve_recipe(target).resolve()
+    # Assert
+    assert package_root in recipe.parents, (
+        f"{recipe} is outside the installable package at {package_root}; "
+        f"it will not ship in the wheel"
+    )
 
 
 def test_resolve_recipe_raises_usage_error_for_unknown_target():
