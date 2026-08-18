@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """The emit seam (§4) — annotation → channel notification.
 
-PROVISIONAL RAIL. The design doc (§4) recommends scitex-todo card events
+PROVISIONAL RAIL. The design doc (§4) recommends scitex-cards card events
 as the durable notification rail, but the exact contract (card model,
 body schema, resolve/close semantics) is pending **scitex-agentic-journal
 ratification** (§5.4). This module keeps the whole mechanism behind a
 single ``emit()`` function so the rail is a swappable impl detail, not an
-API change. Do NOT hard-couple callers to scitex-todo.
+API change. Do NOT hard-couple callers to scitex-cards.
 
 Spike 0 behaviour: ``emit()`` PERSISTS the record (SQLite, ``_db``) and
 POSTS a one-line ``comment_task`` to the manuscript's owning card. Both
@@ -54,19 +54,19 @@ def _notify(
     card_id: str,
     store: Optional[PathLike] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """PROVISIONAL: post the annotation summary to a scitex-todo card.
+    """PROVISIONAL: post the annotation summary to a scitex-cards card.
 
-    Returns ``(notified, notify_error)``. The scitex-todo import is LAZY so
-    the module still imports where scitex-todo is absent (e.g. CI). This is
+    Returns ``(notified, notify_error)``. The scitex-cards import is LAZY so
+    the module still imports where scitex-cards is absent (e.g. CI). This is
     fail-soft for PERSISTENCE (a failed notify never rolls back the row)
     but NOT silent: the reason is surfaced to the caller as ``notify_error``
     (no swallowed exception). ``store`` lets tests point at a tmp
-    ``tasks.yaml`` so the real shared store is never written.
+    store so the real shared one is never written.
     """
     try:
-        from scitex_todo import comment_task
+        from scitex_cards import comment_task
     except ImportError:
-        return False, "scitex-todo not installed — notification rail unavailable"
+        return False, "scitex-cards not installed — notification rail unavailable"
 
     try:
         comment_task(
