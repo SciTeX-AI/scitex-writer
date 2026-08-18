@@ -13,7 +13,7 @@ when only utility functions are needed (e.g., from Django).
 
 def __getattr__(name):
     if name in ("mcp", "run_server"):
-        from scitex_writer._server import mcp, run_server
+        from ._server import mcp, run_server
 
         globals()["mcp"] = mcp
         globals()["run_server"] = run_server
