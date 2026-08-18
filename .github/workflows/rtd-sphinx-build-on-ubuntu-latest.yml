@@ -1,5 +1,20 @@
 name: docs
 
+# Calls the org-provided reusable instead of re-implementing it (PS-231).
+#
+# This is the BUILD GATE only. The body replaced here did two unrelated jobs
+# in one file: gate the Sphinx build, and vendor the built HTML into
+# src/scitex_writer/_sphinx_html/. Only the first is what every repo does, so
+# only the first belongs to the org workflow; the vendoring step moved to
+# vendor-sphinx-html.yml, which is genuinely unique to this leaf.
+#
+# Splitting rather than claiming an exemption for the whole file is the point:
+# an exemption would have kept the shared half local too, and a local copy does
+# not track fixes made org-side.
+#
+# `docs_dir` is left at its default `docs/sphinx`, which is where writer's
+# docs already live.
+
 on:
   push:
     branches: [main, develop]
@@ -7,53 +22,4 @@ on:
 
 jobs:
   sphinx:
-    # Skip when HEAD is the bot's own previous docs auto-commit — breaks
-    # the infinite loop without using `[skip ci]`, which would also
-    # suppress the tag-push and release workflows when the auto-commit
-    # is the most recent commit on develop at release time.
-    if: "!contains(github.event.head_commit.message, 'docs(sphinx_html): refresh from CI build')"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install package + docs deps
-        run: pip install -e ".[docs]"
-
-      - name: Build Sphinx HTML (warnings fail PRs only)
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            sphinx-build -W -b html docs/sphinx docs/sphinx/_build/html
-          else
-            sphinx-build -b html docs/sphinx docs/sphinx/_build/html
-          fi
-
-      - name: Refresh src/scitex_writer/_sphinx_html/ (develop push only)
-        # main is PR-only — its _sphinx_html/ bundle arrives via the
-        # develop -> main PR. Direct bot-pushes to main are inhibited
-        # so the branch history stays linear-via-PR.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-        run: |
-          rm -rf src/scitex_writer/_sphinx_html
-          cp -rf docs/sphinx/_build/html src/scitex_writer/_sphinx_html
-          touch src/scitex_writer/_sphinx_html/.nojekyll
-
-      - name: Commit refreshed HTML if it changed (develop push only)
-        continue-on-error: true
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-        run: |
-          if [ -n "$(git status --porcelain src/scitex_writer/_sphinx_html)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/scitex_writer/_sphinx_html
-            git commit -m "docs(sphinx_html): refresh from CI build"
-            git push
-          fi
+    uses: scitex-ai/.github/.github/workflows/rtd-sphinx-build.yml@main
