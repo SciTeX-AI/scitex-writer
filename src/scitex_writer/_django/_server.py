@@ -18,6 +18,7 @@ import webbrowser
 from pathlib import Path
 
 from .._core._gui_runtime import DEFAULT_PORT
+from ._legacy_env import raise_on_legacy_env
 
 
 def run(
@@ -43,10 +44,12 @@ def run(
     if not project_path.exists():
         raise FileNotFoundError(f"Project directory not found: {project_path}")
 
+    # A retired spelling exported by the caller's launcher is an error, not
+    # something to quietly overwrite: it means they are configuring a writer
+    # that stopped reading that name.
+    raise_on_legacy_env()
+
     os.environ["SCITEX_WRITER_WORKING_DIR"] = str(project_path)
-    # Deprecated unprefixed spelling — kept for one cycle so external
-    # launchers/readers keep working while they migrate.
-    os.environ["WRITER_WORKING_DIR"] = str(project_path)
     os.environ["SCITEX_WORKING_DIR"] = str(project_path)
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "scitex_writer._django.settings")
 

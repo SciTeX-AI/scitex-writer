@@ -281,10 +281,28 @@ class TestCollectAndWrite:
         assert json.loads(Path(out).read_text())["schema"] == "manuscript-hints/1"
 
     def test_absent_artifacts_yield_empty_feed_not_error(self, tmp_path):
+        """A project with no artifacts yields no ARTIFACT hints, and no error.
+
+        Asserting ``collect_hints(...) == []`` conflated two different things:
+        "this project has no artifacts", which is what the name promises, and
+        "the toolchain has nothing to say", which is not a property of the
+        project at all. ``hints_from_toolchain`` correctly reports an installed
+        scitex-clew older than 0.18.0 — so the flat assertion passed or failed
+        on whichever clew happened to be installed in the runner, which is a
+        test that measures the environment while claiming to measure the code.
+
+        Toolchain hints are excluded by their stable ``toolchain:`` id prefix
+        rather than by count, so a NEW toolchain hint does not silently change
+        what this test covers.
+        """
         # Arrange
         empty_project = tmp_path
         # Act
-        found = collect_hints(str(empty_project))
+        found = [
+            hint
+            for hint in collect_hints(str(empty_project))
+            if not str(hint.get("id", "")).startswith("toolchain:")
+        ]
         # Assert
         assert found == []
 

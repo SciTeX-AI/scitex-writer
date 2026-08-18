@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **The unprefixed `WRITER_WORKING_DIR` / `WRITER_DJANGO_SECRET` environment variables are retired.** The fleet convention is `SCITEX_WRITER_<X>`; both were read under a bare `WRITER_` name as well, "for one deprecation cycle" — a promise recorded only in a source comment and never announced here, so the cycle was never actually communicated to anyone. It is announced now, and ended in the same breath, which is the honest version of a deprecation nobody was told about.
+
+  They are **retired, not ignored**. Setting a retired name without its `SCITEX_WRITER_` replacement raises at startup and names the replacement. A plain deletion would have left someone's launcher exporting `WRITER_WORKING_DIR` to a writer that starts cleanly and silently disregards the directory they asked for — a setting accepted and discarded, which is worse than either honouring it or refusing it. Exporting both is fine; that is what a migration in flight looks like.
+
+### Changed
+- **Six CI workflows became callers of the org-provided reusables instead of local re-implementations** (`auto-merge-to-develop`, `cla`, `import-smoke`, `pytest-matrix`, `quality-audit`, `rtd-sphinx-build`). A local copy does not track fixes made org-side — the `scitex-ci` runner-label defect was fixed centrally on 2026-08-15 and every copy in the fleet kept it.
+
+  **This is also how `--new-only` leaves.** The replaced quality-audit body ran `audit-all --new-only --since "$AUDIT_BASE_REF" --no-version-check`: pre-existing findings grandfathered permanently and invisibly, and the "is the rule corpus current?" check skipped. Constitution §2 names that configuration as the worked example of a gate that cannot fail. The org reusable audits the whole tree with neither flag, so the leaf-CI consolidation and the dead-gate fix are one change rather than two.
+
+  `docs` **split rather than exempted.** Writer's Sphinx workflow did two unrelated jobs: gate the build (what every repo does) and vendor the built HTML into `src/scitex_writer/_sphinx_html/` (unique to this leaf — no org workflow commits into a consumer's package tree). Only the second is genuinely local, so it moved to `vendor-sphinx-html.yml` and the first became a caller. Claiming an exemption for the whole file would have kept the shared half local too, which is the thing the rule exists to prevent.
+
+  Two inputs are passed rather than defaulted, both to preserve existing behaviour: `cla` keeps writer's `owner_allowlist` (`bot*,ywatanabe1989,LLEmacs` — the org default omits `LLEmacs`), and `GH_PERSONAL_ACCESS_TOKEN` is mapped explicitly instead of `secrets: inherit`, which would forward `CLAUDE_CODE_CREDENTIALS_JSON` into a CLA action that has no business seeing it. `pytest-matrix` ships **no** `secrets:` block: writer holds no `CODECOV_TOKEN`, and an unset secret maps to empty, which fails the upload as "Token required because branch is protected" while the step still reports success.
+
+  **Branch protection must move with this.** The reusable's checks are named `<caller job id> / <job name>`, so `develop` now sees `pytest-matrix / pytest-matrix-on-ubuntu-py3.NN` where it required the unprefixed `pytest-matrix-on-ubuntu-py3.NN`. This repo has already paid for that mistake once — 2.41.0 records protection naming contexts no check run ever produced, which made every PR unmergeable through the front door.
+
+- **Two scitex-dev imports had been broken for an unknown length of time, and the gate above found them on its first honest run.** `scitex_dev.skills` and `scitex_dev.types` no longer exist — `list_skills`/`get_skill` moved to `scitex_dev.ecosystem`, and `RESULT_SCHEMA` is on the top-level package. Both call sites are repointed:
+  - `_mcp/tools/skills.py` — the `writer_skills_list` and `writer_skills_get` MCP tools were dead against any current scitex-dev.
+  - `_cli/mcp.py` — `scitex-writer mcp ... --json` raised on the import.
+
+  Under the old `importorskip(<full path>)` these were reported as SKIPPED and the suite was green. This is exactly the failure class PS-140 describes, caught the first time the gate was allowed to fail.
+
+  **And the error message was lying about the cause.** Both MCP tools wrapped the import in `except ImportError: "scitex-dev not installed"` — so once the symbol moved, they reported an absent package that was sitting right there, sending the reader to `pip show scitex-dev` and then off to debug something else. The handler now distinguishes absent from moved and names the remedy for each: install it, versus update the call site.
+
+- **The cross-package import gate stops turning the failure it exists to catch into a skip** (PS-140). It called `pytest.importorskip(<full dotted path>)`, so a peer that renamed a submodule raised `ModuleNotFoundError`, was skipped, and reported green. It now skips on the ROOT package — a legitimately absent optional peer still skips — and hard-imports the full path, so a peer that is present must import at the exact path writer references.
 ### Added
 - **`scitex_writer.workspace_layout` — writer's project layout is now published, not private.** A writer project has two roots: the project directory the user names, and the workspace at `<project>/.scitex/writer/` where writer actually keeps `scripts/`, `config/` and `01_manuscript/`. Writer had never exported that fact, so a downstream caller had no choice but to spell the path out by hand — and got it wrong. Measured in production 2026-08-17, full compilation was dead for every user with `bash: /workspace/scripts/shell/compile_manuscript.sh: No such file or directory`; the script existed, one hidden segment down. The new module exports `WORKSPACE_RELPATH`, `SHELL_SCRIPTS_RELPATH`, `COMPILE_SCRIPT_RELPATHS`, `workspace_dir()` and `compile_script_relpath()`, so the layout has exactly one statement of itself.
 
