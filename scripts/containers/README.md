@@ -1,14 +1,29 @@
 # Container Definitions
 
-This directory contains container definition files for reproducible LaTeX compilation.
+Container definition files for building **this repository**, run by maintainers
+from a checkout.
+
+## The sub-tool recipes moved
+
+`texlive.def` and `mermaid.def` now live at
+`src/scitex_writer/_cli/container_recipes/`, as package data.
+
+They had to move: `scitex-writer containers install <target>` reads them at
+runtime, and the wheel packages `src/scitex_writer` only — so from a pip install
+they were not present at any path, and the verb was dead for every user without
+a checkout. See that directory's README for the measurement.
+
+The split here is by audience, not by file type. Data the *installed CLI* reads
+ships inside the package; things you run from a *clone* stay here.
 
 ## Available Containers
 
-| Container | Purpose | Format |
-|-----------|---------|--------|
-| `texlive.def` | Full TeX Live environment | Apptainer/Singularity |
-| `mermaid.def` | Mermaid diagram generation | Apptainer/Singularity |
-| `Dockerfile` | Full TeX Live environment | Docker |
+| Container | Purpose | Format | Lives in |
+|-----------|---------|--------|----------|
+| `texlive.def` | Full TeX Live environment | Apptainer/Singularity | `src/scitex_writer/_cli/container_recipes/` |
+| `mermaid.def` | Mermaid diagram generation | Apptainer/Singularity | `src/scitex_writer/_cli/container_recipes/` |
+| `scitex-writer.def` | The scitex-writer application image | Apptainer/Singularity | here |
+| `Dockerfile` | Full TeX Live environment | Docker | here |
 
 ## Building Containers
 
