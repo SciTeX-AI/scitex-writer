@@ -1,0 +1,68 @@
+name: vendor-sphinx-html
+
+# Vendors the built Sphinx HTML into src/scitex_writer/_sphinx_html/ so the
+# package can serve its own docs offline. Genuinely unique to this leaf — no
+# org workflow commits into a consumer's package tree — which is why it is a
+# local workflow and not a caller.
+#
+# It used to be two extra steps bolted onto the docs BUILD workflow. That file
+# now calls the org reusable (PS-231), and the shared half cannot carry a
+# leaf-specific commit step, so the two jobs are separated by what they are:
+#   docs                -> gate the build (org reusable, runs on PRs too)
+#   vendor-sphinx-html  -> produce and commit the bundle (here, develop only)
+#
+# The build is repeated rather than passed as an artifact between workflows.
+# That is deliberate: an artifact handoff would couple this file to the org
+# workflow's internals — the very coupling PS-231 exists to remove — and the
+# duplicate build costs one job on develop pushes only, never on a PR.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  vendor:
+    # Skip when HEAD is this workflow's own previous auto-commit — breaks the
+    # infinite loop without using `[skip ci]`, which would also suppress the
+    # tag-push and release workflows whenever the auto-commit happens to be
+    # the most recent commit on develop at release time.
+    if: "!contains(github.event.head_commit.message, 'docs(sphinx_html): refresh from CI build')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package + docs deps
+        run: pip install -e ".[docs]"
+
+      - name: Build Sphinx HTML
+        # Not -W here: the PR gate in `docs` is where warnings must fail. This
+        # job runs after the merge, where refusing to vendor over a warning
+        # would leave the shipped bundle stale with nothing to show for it.
+        run: sphinx-build -b html docs/sphinx docs/sphinx/_build/html
+
+      - name: Refresh src/scitex_writer/_sphinx_html/
+        run: |
+          rm -rf src/scitex_writer/_sphinx_html
+          cp -rf docs/sphinx/_build/html src/scitex_writer/_sphinx_html
+          touch src/scitex_writer/_sphinx_html/.nojekyll
+
+      - name: Commit refreshed HTML if it changed
+        continue-on-error: true
+        run: |
+          if [ -n "$(git status --porcelain src/scitex_writer/_sphinx_html)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/scitex_writer/_sphinx_html
+            git commit -m "docs(sphinx_html): refresh from CI build"
+            git push
+          fi
