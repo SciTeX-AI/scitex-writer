@@ -1782,23 +1782,16 @@ select:focus {
   max-width: 100%;
 }
 
-/* PR8-inline: Writer runs standalone locally — the shell's AI / worktree /
- * viewer panes have no content in this mode. Hide them so the writer
- * content gets the full viewport. The module pane (where .writer-app mounts)
- * expands to fill the row.
- * Cloud deployments override this — their own shell JS populates the panes,
- * so they surround the writer with nav/AI/file-tree there.
+/* Pane visibility is DECLARED, not styled. The rules that used to sit here
+ * reached into scitex-ui's private DOM (`.workspace-three-col > .ws-ai-pane`
+ * and siblings) — class names that package is free to rename, which would
+ * have broken writer silently and invisibly to both sides. Two of the five
+ * names were already wrong: `.ws-apps-pane` is emitted by nothing, and the
+ * pane spelled `.ws-worktree-pane` is keyed `files` in the API, so the
+ * inference that produced these selectors had drifted twice over.
+ * Writer now says what its panes ARE via scitex_ui.branding.shell_context()
+ * in _django/views.py — an API scitex-ui is obliged not to break.
  */
-body:has(.writer-app) .workspace-three-col > .ws-ai-pane,
-body:has(.writer-app) .workspace-three-col > .ws-worktree-pane,
-body:has(.writer-app) .workspace-three-col > .ws-viewer-pane,
-body:has(.writer-app) .workspace-three-col > .ws-apps-pane {
-  display: none;
-}
-body:has(.writer-app) .workspace-three-col > .ws-module-pane {
-  flex: 1 1 auto;
-  width: 100%;
-}
 
 /* Section dropdown + collab info panel */
 .writer-section-select {
