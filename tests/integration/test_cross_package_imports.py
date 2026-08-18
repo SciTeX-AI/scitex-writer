@@ -16,6 +16,8 @@ in its source tree. Two outcomes:
   (which installs every peer) catches cross-package renames.
 """
 
+import importlib
+
 import pytest
 
 # ===== AUTO-GENERATED: cross-package imports =====
@@ -39,9 +41,20 @@ CROSS_PACKAGE_IMPORTS = [
 
 @pytest.mark.parametrize("module_name", CROSS_PACKAGE_IMPORTS)
 def test_cross_package_import(module_name):
-    """Importing scitex-writer's declared cross-package dependency must succeed."""
+    """Importing scitex-writer's declared cross-package dependency must succeed.
+
+    SKIP ON THE ROOT, HARD-IMPORT THE FULL PATH. ``importorskip`` on the full
+    dotted path turns the very failure this gate exists to catch into a SKIP:
+    a peer that renamed a submodule raises ModuleNotFoundError, gets skipped,
+    and the run reports green. Skipping on the root package keeps a lean
+    install honest — a peer that is legitimately absent (optional extra,
+    marker-gated dependency) still skips — while a peer that is PRESENT must
+    import at the exact path writer references, or fail.
+    """
     # Arrange
+    root = module_name.split(".")[0]
+    pytest.importorskip(root)
     # Act
-    module = pytest.importorskip(module_name)
+    module = importlib.import_module(module_name)
     # Assert
     assert module is not None

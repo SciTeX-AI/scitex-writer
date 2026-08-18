@@ -1,33 +1,36 @@
 name: CLA Assistant
 
+# Calls the org-provided reusable instead of re-implementing it (PS-231).
+#
+# The reusable derives the repository and the CLA.md URL from
+# `${{ github.repository }}`, which for a workflow_call run resolves to the
+# CALLING repository — so nothing here needs to name scitex-writer.
+#
+# `owner_allowlist` IS passed: writer's list carries `LLEmacs` in addition to
+# the org default `bot*,ywatanabe1989`. Dropping it would start demanding a CLA
+# signature from a contributor who has been allowlisted here since this
+# workflow was written.
+#
+# GH_PERSONAL_ACCESS_TOKEN is mapped EXPLICITLY rather than via
+# `secrets: inherit` — inherit forwards every secret this repo holds into the
+# reusable, and writer holds CLAUDE_CODE_CREDENTIALS_JSON, which the CLA action
+# has no business seeing (PS-224).
+
 on:
   issue_comment:
     types: [created]
   pull_request_target:
     types: [opened, closed, synchronize]
 
-permissions:
-  actions: write
-  contents: write
-  pull-requests: write
-  statuses: write
-
 jobs:
   CLAssistant:
-    runs-on: ubuntu-latest
-    steps:
-      - name: CLA Assistant
-        uses: contributor-assistant/github-action@v2.6.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-        with:
-          path-to-signatures: "signatures/cla.json"
-          path-to-document: "https://github.com/ywatanabe1989/scitex-writer/blob/main/CLA.md"
-          branch: "cla-signatures"
-          allowlist: bot*,ywatanabe1989,LLEmacs
-          custom-allsigned-prcomment: |
-            Thank you for signing the SciTeX CLA. Your contribution can now be reviewed.
-          custom-notsigned-prcomment: |
-            Please sign the [SciTeX CLA](https://github.com/ywatanabe1989/scitex-writer/blob/main/CLA.md) before your contribution can be merged.
-            Comment `I have read and agree to the SciTeX CLA.` to sign.
+    uses: scitex-ai/.github/.github/workflows/cla.yml@main
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+      statuses: write
+    with:
+      owner_allowlist: "bot*,ywatanabe1989,LLEmacs"
+    secrets:
+      GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}

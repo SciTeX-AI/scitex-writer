@@ -1,11 +1,20 @@
 name: import-smoke
 
-# Catches "wheel installs but `import scitex_writer` blows up at runtime"
-# — separate from the full pytest suite so a broken entry-point fails
-# fast without paying for the matrix. Companion to `tests` — confirms
-# the bare package (no extras) is `pip install -e .`-able and
-# `import scitex_writer` succeeds. Catches `[project] dependencies`
-# drift that the test matrix masks because it installs `[all,dev]`.
+# Calls the org-provided reusable instead of re-implementing it (PS-231).
+#
+# Catches "wheel installs but `import scitex_writer` blows up at runtime" —
+# separate from the full pytest suite so a broken entry point fails fast
+# without paying for the matrix, and installed with NO extras so `[project]
+# dependencies` drift cannot hide behind the matrix's `[all,dev]` install.
+#
+# `console_script` is left at its default: the reusable derives what to import
+# from the distribution, and the body replaced here did exactly the same bare
+# `pip install -e .` + `import scitex_writer` that the reusable does.
+#
+# NOT the same gate as `sdist-wheel-import`, which stays a leaf workflow: that
+# one builds an sdist, builds a wheel FROM it, and installs into a clean venv
+# — the only place a packaging exclude actually bites. This one installs from
+# the source tree, so it cannot catch a broken sdist and does not try to.
 
 on:
   push:
@@ -17,18 +26,5 @@ on:
   workflow_dispatch:
 
 jobs:
-  install-check:
-    name: import-smoke-on-ubuntu-py3-12
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install (no extras)
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -e .
-      - name: Import smoke
-        run: .venv/bin/python -c "import scitex_writer; print(scitex_writer.__version__)"
+  import-smoke:
+    uses: scitex-ai/.github/.github/workflows/import-smoke.yml@main
