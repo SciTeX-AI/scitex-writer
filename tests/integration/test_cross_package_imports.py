@@ -30,8 +30,8 @@ CROSS_PACKAGE_IMPORTS = [
     "scitex_dev.skills",
     "scitex_dev.system_deps",
     "scitex_dev.types",
+    "scitex_cards",
     "scitex_scholar",
-    "scitex_todo",
     "scitex_ui",
     "scitex_ui.branding",
 ]
