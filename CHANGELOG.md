@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A release run on the wrong runner pool now says so, instead of dying at `mkdir: cannot create directory '/data': Permission denied`.** `.github/ci/exec-in-sif.sh` is Spartan-only — it binds `/data/gpfs/projects/punim0264` and puts apptainer scratch inside it — but nothing checked that the GPFS root existed before using it. On a runner without it, `mkdir -p` walked up and tried to create `/data` at the filesystem root, producing a permission error at a path nobody had configured, on a run whose actual fault was "wrong pool".
+
+  Measured during the v2.42.0 release: `CI_RUNS_ON` had been repointed from the Spartan pool to `scitex-org-cpu`, whose runners are healthy and carry a valid label but simply do not have that filesystem. It cost two failed releases to read, because the shim guard fired first for the same underlying reason and pointed at a stale path instead.
+
+  The bind root is now checked before use and the error names the real cause and the remedy — including that a healthy runner from another pool will still fail, since the fault is the filesystem and not the machine. The scratch `mkdir` is checked too, so "root exists but is not writable" is a distinct message rather than the same one.
+
+  Verified from both sides: the guard fires on a host without GPFS, and the root is present and the scratch writable on Spartan, so the working path is untouched.
+
 ## [2.42.0] - 2026-08-18
 
 ### Removed
