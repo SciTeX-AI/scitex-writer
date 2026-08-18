@@ -23,6 +23,7 @@ import pytest
 # ===== AUTO-GENERATED: cross-package imports =====
 CROSS_PACKAGE_IMPORTS = [
     "scitex_app.embed",
+    "scitex_cards",
     "scitex_clew",
     "scitex_config._ecosystem",
     "scitex_container.apptainer",
@@ -32,7 +33,6 @@ CROSS_PACKAGE_IMPORTS = [
     "scitex_dev.ecosystem",
     "scitex_dev.system_deps",
     "scitex_scholar",
-    "scitex_todo",
     "scitex_ui",
 ]
 # ===== END AUTO-GENERATED =====
