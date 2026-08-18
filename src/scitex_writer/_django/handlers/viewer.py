@@ -10,6 +10,7 @@ Backs the live-paper viewer (issue #82 / cloud #133):
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 
 from django.http import JsonResponse
@@ -89,11 +90,37 @@ def handle_dag(request, project):
         return JsonResponse({"success": False, "error": str(exc)}, status=500)
 
 
+def _citation_unavailable_reason() -> str:
+    """Why citation verification is unavailable, stated accurately.
+
+    An ``except ImportError`` here answered BOTH failures with "scitex-scholar
+    not installed", and only one of them is that. Measured 2026-08-18 against
+    scholar 1.7.1: ``verify_citation`` DOES NOT EXIST — no such symbol
+    anywhere in the package, and nothing obviously equivalent among its public
+    names. So every citation in the live-paper viewer has been coming back
+    UNVERIFIABLE with a reason that is false, on a machine where scholar is
+    installed and working.
+
+    That is the same shape as the 2.30.2 NO_PROVENANCE defect: a verification
+    surface reporting "could not check" for a reason that sends the reader to
+    fix something already fine. On a provenance tool that is a wrong answer
+    about the science, not a UI wart.
+    """
+    if importlib.util.find_spec("scitex_scholar") is None:
+        return "scitex-scholar is not installed"
+    return (
+        "scitex-scholar is installed but no longer exposes verify_citation, "
+        "so citations cannot be checked; this is a missing upstream "
+        "capability, not a problem with this manuscript or its bibliography"
+    )
+
+
 def handle_citation(request, project, cite_key: str):
     """Return verification state for a bibliography citation key.
 
-    Consumes scitex-scholar when available; degrades to UNVERIFIABLE with a
-    clear reason otherwise so the frontend can show a consistent badge.
+    Consumes scitex-scholar when available; degrades to UNVERIFIABLE with an
+    ACCURATE reason otherwise, so the frontend can show a consistent badge and
+    the reader is not sent to debug the wrong thing.
     """
     try:
         from scitex_scholar import verify_citation  # type: ignore
@@ -106,7 +133,7 @@ def handle_citation(request, project, cite_key: str):
                 "success": True,
                 "cite_key": cite_key,
                 "state": _CITATION_UNVERIFIABLE,
-                "reason": "scitex-scholar not installed",
+                "reason": _citation_unavailable_reason(),
             }
         )
     except Exception as exc:

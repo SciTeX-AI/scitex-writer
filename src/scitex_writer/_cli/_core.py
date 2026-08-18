@@ -103,23 +103,49 @@ def _alias_top_level(cmd: click.Command, new_name: str) -> None:
 
 
 def _mount_optional_subcommands():
-    """Mount scitex_dev `docs` and `skills` subcommands if available.
+    """Mount scitex_dev's `docs` and `skills` subcommands if available.
 
-    These come from scitex_dev as Click groups; if present, attach them to
-    main_group so they show up under `scitex-writer docs ...` / `skills ...`.
+    These come from scitex_dev as Click groups; attach them to main_group so
+    they show up under `scitex-writer docs ...` / `skills ...`.
+
+    THESE HAD BEEN SILENTLY MISSING. The previous code imported
+    ``register_docs_subcommand_click`` / ``register_skills_subcommand_click``,
+    which no longer exist in scitex_dev — the helpers were renamed to
+    ``docs_click_group`` / ``skills_click_group`` and changed shape, from
+    "register yourself into my group" to "return a group and I will add it".
+    Every call raised ImportError into a bare ``except Exception: pass``, so
+    both subcommands quietly stopped existing and `scitex-writer --help`
+    simply listed two fewer verbs. Found 2026-08-18 by the symbol-level
+    cross-package gate; the module-level gate could not see it, because
+    ``scitex_dev.cli`` imports fine — only the names inside had moved.
+
+    STILL TOLERANT OF ABSENCE, BUT NO LONGER OF BREAKAGE. scitex_dev may
+    legitimately not be installed, and that must stay a no-op. A scitex_dev
+    that IS installed but does not expose these is a different thing: it means
+    writer is calling an API that moved, and swallowing it is what let this
+    sit unnoticed. That case now warns, naming both symbols, so the next
+    rename is a visible line rather than two absent verbs.
     """
-    try:
-        from scitex_dev.cli import register_docs_subcommand_click
+    import importlib.util
+    import logging
 
-        register_docs_subcommand_click(main_group, package="scitex-writer")
-    except Exception:
-        pass
-    try:
-        from scitex_dev.cli import register_skills_subcommand_click
+    if importlib.util.find_spec("scitex_dev") is None:
+        return  # optional peer genuinely absent — nothing to mount, no noise
 
-        register_skills_subcommand_click(main_group, package="scitex-writer")
-    except Exception:
-        pass
+    from scitex_dev import cli as _dev_cli
+
+    for factory_name in ("docs_click_group", "skills_click_group"):
+        factory = getattr(_dev_cli, factory_name, None)
+        if factory is None:
+            logging.getLogger(__name__).warning(
+                "[scitex-writer] scitex_dev is installed but does not expose "
+                "scitex_dev.cli.%s — the subcommand it provides will be "
+                "missing from `scitex-writer --help`. The symbol has moved; "
+                "writer's call site needs updating.",
+                factory_name,
+            )
+            continue
+        main_group.add_command(factory(package="scitex-writer"))
 
 
 # =========================================================================
