@@ -7,11 +7,10 @@ writer's in-tree ``00_shared/scholar/library``).
 
 Resolution paths, in order:
 
-1. ``<library_root>/index.db`` — when scitex-scholar PR-C has shipped,
-   use a single SQLite SELECT. This is preferred whenever the DB exists.
-2. Linear scan of ``<library_root>/MASTER/*/metadata.json``, cached
-   in-process with an mtime key. Works today, no DB needed.
-3. Return ``None`` — caller falls back to bare bib card.
+1. Linear scan of ``<library_root>/MASTER/*/metadata.json``, cached
+   in-process with an mtime key. The metadata files ARE the library — no
+   separate index is read, and none is maintained here.
+2. Return ``None`` — caller falls back to bare bib card.
 
 Every function degrades on missing/dangling symlink, unreadable JSON,
 or unknown schema fields.
@@ -20,7 +19,6 @@ or unknown schema fields.
 from __future__ import annotations
 
 import json
-import sqlite3
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -31,9 +29,6 @@ scitex_scholar = try_import_optional(
     "scitex_scholar", extra="scholar", pkg="scitex-writer"
 )
 SCHOLAR_AVAILABLE = scitex_scholar is not None
-
-
-_INDEX_DB_NAME = "index.db"
 
 
 def scholar_library_root(project_dir: Path) -> Optional[Path]:
@@ -48,29 +43,8 @@ def scholar_library_root(project_dir: Path) -> Optional[Path]:
     return resolved
 
 
-def _index_db_path(root: Path) -> Optional[Path]:
-    """Return the index.db path if present and readable."""
-    p = root / _INDEX_DB_NAME
-    return p if p.is_file() else None
-
-
 def metadata_for_doi(root: Path, doi: str) -> Optional[dict]:
-    """Look up a paper by DOI. Prefers index.db, falls back to MASTER scan."""
-    db = _index_db_path(root)
-    if db is not None:
-        try:
-            with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT * FROM papers WHERE doi = ? COLLATE NOCASE", (doi,)
-                ).fetchone()
-                if row:
-                    return _hydrate_full_metadata(root, dict(row)["paper_id"]) or dict(
-                        row
-                    )
-        except sqlite3.Error:
-            pass
-
+    """Look up a paper by DOI via the MASTER metadata scan."""
     doi_lc = doi.lower()
     for md in _iter_all_metadata(root):
         entry_doi = (md.get("metadata", {}).get("id", {}) or {}).get("doi")
@@ -86,23 +60,10 @@ def metadata_for_paper_id(root: Path, paper_id: str) -> Optional[dict]:
 def iter_library_cards(root: Path) -> list[dict]:
     """Return a list of compact library records for a browse view.
 
-    Prefers index.db (one query) over full-MASTER scan. Each record has
-    ``paper_id``, ``doi``, ``title``, ``year``, ``venue`` at minimum;
-    consumers should ``.get()`` anything beyond that.
+    One cached MASTER scan. Each record has ``paper_id``, ``doi``, ``title``,
+    ``year``, ``venue`` at minimum; consumers should ``.get()`` anything
+    beyond that.
     """
-    db = _index_db_path(root)
-    if db is not None:
-        try:
-            with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute(
-                    "SELECT paper_id, doi, arxiv_id, pmid, title, year, venue, is_oa "
-                    "FROM papers ORDER BY year DESC, title"
-                ).fetchall()
-                return [dict(r) for r in rows]
-        except sqlite3.Error:
-            pass
-
     out = []
     for md in _iter_all_metadata(root):
         m = md.get("metadata", {}) or {}
