@@ -14,18 +14,24 @@ Spike 0 (§6.1): POST + GET only, ``kind=text_comment`` only,
 
 from __future__ import annotations
 
-from ._db import default_db_path, list_annotations, persist
 from ._emit import default_card_id, emit, render_summary
 from ._record import Annotation
 from ._service import add_annotation, resolve_source_ref
+from ._store import (
+    annotation_store_target,
+    list_annotations,
+    open_annotation_store,
+    persist,
+)
 
 __all__ = [
     "Annotation",
     "add_annotation",
+    "annotation_store_target",
     "default_card_id",
-    "default_db_path",
     "emit",
     "list_annotations",
+    "open_annotation_store",
     "persist",
     "render_summary",
     "resolve_source_ref",

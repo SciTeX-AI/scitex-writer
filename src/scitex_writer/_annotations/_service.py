@@ -36,13 +36,13 @@ def add_annotation(
     *,
     project: str,
     card_id: Optional[str] = None,
-    db_path: Optional[PathLike] = None,
     store: Optional[PathLike] = None,
 ) -> Dict[str, Any]:
     """POST orchestration (§3): validate → resolve source_ref → persist → emit.
 
-    ``project`` names the manuscript (used to derive the owning card id).
-    ``db_path`` / ``store`` are injectable so tests stay hermetic. Returns
+    ``project`` names the manuscript project directory — it scopes the
+    annotation store and derives the owning card id. ``store`` is injectable
+    so tests never touch the shared card store. Returns
     ``{ok, annotation_id, source_ref, notified}``.
     """
     annotation = Annotation.from_post(body)
@@ -52,7 +52,6 @@ def add_annotation(
         annotation,
         project=project,
         card_id=card_id,
-        db_path=db_path,
         store=store,
     )
     return {

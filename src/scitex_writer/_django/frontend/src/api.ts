@@ -119,7 +119,6 @@ export interface ScholarStatus {
   scholar_importable: boolean;
   scholar_cli_on_path: boolean;
   library_root: string | null;
-  index_db_present: boolean;
 }
 export interface ScholarLibraryEntry {
   paper_id: string;

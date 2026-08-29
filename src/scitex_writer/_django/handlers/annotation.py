@@ -13,23 +13,22 @@ framework-agnostic ``_annotations`` module.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from django.http import JsonResponse
 
 from ..._annotations import add_annotation, list_annotations
 
 
-def _db_path_for(project) -> Path:
-    """Project-scoped runtime DB (``<proj>/.scitex/writer/runtime/writer.db``).
+def _scope_for(project) -> str:
+    """The store scope for one manuscript: its project directory.
 
-    The design doc names ``local_state.runtime_path("writer","writer.db")``;
-    that helper resolves scope from the server's cwd, but the Django server
-    serves arbitrary manuscript ``working_dir``s, so we pin the DB under the
-    *manuscript* project root (the location the doc actually names) to keep
-    each manuscript's annotations with its own sources.
+    The Django server serves arbitrary manuscript ``working_dir``s and the
+    annotations store is one fleet-wide table, so the scope has to be the
+    thing that distinguishes two manuscripts. That is the project ROOT PATH,
+    not its basename — two checkouts named ``myproj`` are two manuscripts and
+    must not share a feedback queue.
     """
-    return project.project_dir / ".scitex" / "writer" / "runtime" / "writer.db"
+    return str(project.project_dir)
 
 
 def handle_add_annotation(request, project):
@@ -40,11 +39,7 @@ def handle_add_annotation(request, project):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     try:
-        result = add_annotation(
-            body,
-            project=project.project_dir.name,
-            db_path=_db_path_for(project),
-        )
+        result = add_annotation(body, project=_scope_for(project))
     except ValueError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
@@ -54,7 +49,7 @@ def handle_add_annotation(request, project):
 def handle_list_annotations(request, project):
     """GET /api/annotations — list annotations (filter by doc_type/status/build_id)."""
     annotations = list_annotations(
-        db_path=_db_path_for(project),
+        project=_scope_for(project),
         doc_type=request.GET.get("doc_type") or None,
         status=request.GET.get("status") or None,
         build_id=request.GET.get("build_id") or None,
