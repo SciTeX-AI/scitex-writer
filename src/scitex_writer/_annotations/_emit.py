@@ -9,10 +9,10 @@ ratification** (§5.4). This module keeps the whole mechanism behind a
 single ``emit()`` function so the rail is a swappable impl detail, not an
 API change. Do NOT hard-couple callers to scitex-cards.
 
-Spike 0 behaviour: ``emit()`` PERSISTS the record (SQLite, ``_db``) and
-POSTS a one-line ``comment_task`` to the manuscript's owning card. Both
-steps are fail-soft on the notify side — a failed post never fails the
-persist (§3, POST sequence step 4).
+Spike 0 behaviour: ``emit()`` PERSISTS the record (``_store``, on the shared
+``scitex_dev.store`` primitive) and POSTS a one-line ``comment_task`` to the
+manuscript's owning card. Both steps are fail-soft on the notify side — a
+failed post never fails the persist (§3, POST sequence step 4).
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
-from ._db import persist as _persist
 from ._record import Annotation
+from ._store import persist as _persist
 
 PathLike = Union[str, Path]
 
@@ -32,8 +32,13 @@ _EMIT_AUTHOR = "scitex-writer"
 
 
 def default_card_id(project: str) -> str:
-    """The provisional owning-card id for a manuscript project (§4)."""
-    return _CARD_ID_TEMPLATE.format(project=project)
+    """The provisional owning-card id for a manuscript project (§4).
+
+    ``project`` is the manuscript project DIRECTORY — callers pass a path so
+    two manuscripts sharing a basename stay distinct in the store. A card id
+    has to stay short and human-typeable, so only the basename goes in it.
+    """
+    return _CARD_ID_TEMPLATE.format(project=Path(project).name)
 
 
 def render_summary(record: Dict[str, Any]) -> str:
@@ -85,16 +90,16 @@ def emit(
     *,
     project: str,
     card_id: Optional[str] = None,
-    db_path: Optional[PathLike] = None,
     store: Optional[PathLike] = None,
 ) -> Dict[str, Any]:
     """Persist the annotation, then emit the provisional notification.
 
-    Returns ``{annotation_id, source_ref, persisted, notified, notify_error}``.
+    ``project`` is both the store scope and the card-id source. Returns
+    ``{annotation_id, source_ref, persisted, notified, notify_error}``.
     ``notified`` is fail-soft (§3 step 4): a failed notify still returns a
     persisted record, and ``notify_error`` names WHY (never silent).
     """
-    record = _persist(annotation, db_path=db_path)
+    record = _persist(annotation, project=project)
     target_card = card_id or default_card_id(project)
     notified, notify_error = _notify(record, card_id=target_card, store=store)
     return {

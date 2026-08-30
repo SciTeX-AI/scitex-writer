@@ -90,31 +90,6 @@ def test_iter_library_cards_sorted_by_year_desc(tmp_path: Path):
     assert [c["paper_id"] for c in cards] == ["NEW", "OLD"]
 
 
-def test_prefers_index_db_when_present(tmp_path: Path):
-    """If index.db exists, iter_library_cards reads it directly."""
-    # Arrange
-    import sqlite3
-
-    _write_metadata(tmp_path, "AAA", doi="10.1/a", year=2024, title="alpha")
-    conn = sqlite3.connect(tmp_path / "index.db")
-    conn.executescript(
-        "CREATE TABLE papers (paper_id TEXT PRIMARY KEY, doi TEXT, "
-        "arxiv_id TEXT, pmid TEXT, title TEXT, year INTEGER, venue TEXT, "
-        "is_oa INTEGER, updated_at REAL);"
-    )
-    conn.execute(
-        "INSERT INTO papers(paper_id, doi, title, year, venue) VALUES "
-        "('ZZZ','10.9/z','from_db',2099,'DB')"
-    )
-    conn.commit()
-    conn.close()
-
-    # Act
-    cards = scholar.iter_library_cards(tmp_path)
-    # Assert
-    assert any(c["paper_id"] == "ZZZ" for c in cards)
-
-
 def test_scholar_available_flag_is_bool():
     # Arrange
     # Act

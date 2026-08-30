@@ -31,6 +31,7 @@ CROSS_PACKAGE_IMPORTS = [
     "scitex_dev.cli",
     "scitex_dev.decorators",
     "scitex_dev.ecosystem",
+    "scitex_dev.store",
     "scitex_dev.system_deps",
     "scitex_scholar",
     "scitex_ui",
@@ -58,3 +59,117 @@ def test_cross_package_import(module_name):
     module = importlib.import_module(module_name)
     # Assert
     assert module is not None
+
+
+# =========================================================================
+# SYMBOL-LEVEL GATE — hand-written, deliberately BELOW the sentinel.
+#
+# The parametrised test above imports MODULES. Writer does not import
+# modules; it imports SYMBOLS out of them. A peer that MOVES A MODULE is
+# caught above. A peer that keeps the module and moves, renames or deletes a
+# SYMBOL inside it passes above cleanly and breaks writer at runtime — and
+# that is most of the surface.
+#
+# Not hypothetical: on 2026-08-18 `scitex_dev.skills` moved (a module move,
+# caught above) while `RESULT_SCHEMA` moved out of `scitex_dev.types` to the
+# package root (a symbol move, which only the module half covered).
+#
+# DISCOVERED BY PARSING WRITER'S OWN SOURCE, never by a maintained list. A
+# hand-kept list of imports is a second copy of the import surface and drifts
+# from the first — the defect class this repo spent 2026-08-18 removing. The
+# AST walk is true by construction and needs no upstream support.
+#
+# It READS source and never imports it, so a broken peer cannot make
+# discovery fail and hand back a short list — which would look exactly like
+# writer having few dependencies.
+#
+# Approach contributed by scitex-app, who hit the identical gap in their own
+# gate and built it first. Two of the guards below are theirs; the
+# `node.level == 0` filter is not, and matters — a RELATIVE import
+# (`from .clew_thing import x`) also populates `node.module`, so without the
+# level check a local module whose name collides with a peer root would be
+# discovered as a cross-package import and then fail to import as one.
+# =========================================================================
+
+import ast  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+PEER_PACKAGES = {name.split(".")[0] for name in CROSS_PACKAGE_IMPORTS}
+
+WRITER_SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_writer"
+
+
+def _peer_symbol_imports():
+    """Every ``from <peer> import <symbol>`` writer's source actually makes."""
+    found = set()
+    for path in WRITER_SRC.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            # level > 0 is a RELATIVE import — writer's own tree, not a peer.
+            if node.level or not node.module:
+                continue
+            if node.module.split(".")[0] not in PEER_PACKAGES:
+                continue
+            for alias in node.names:
+                if alias.name != "*":
+                    found.add((node.module, alias.name))
+    return sorted(found)
+
+
+PEER_SYMBOL_IMPORTS = _peer_symbol_imports()
+
+
+def test_symbol_discovery_found_something():
+    """Positive control. An empty parametrise is reported GREEN by pytest.
+
+    Without this, a discovery bug returning [] silences every case below and
+    the gate passes by checking nothing — the exact failure it exists to
+    prevent, reintroduced one level up.
+    """
+    # Arrange
+    discovered = PEER_SYMBOL_IMPORTS
+    # Act
+    count = len(discovered)
+    # Assert
+    assert count > 0
+
+
+#: Peer symbols writer imports that the peer NO LONGER PROVIDES, and which
+#: writer cannot restore on its own. Declared, not hidden: each is xfail
+#: STRICT, so if the peer brings the symbol back the test fails as
+#: "unexpectedly passed" and forces this entry to be deleted. An entry here is
+#: a tracked upstream gap with a card, never a way to quieten the gate.
+KNOWN_MISSING_UPSTREAM = {
+    ("scitex_scholar", "verify_citation"): (
+        "scitex-scholar 1.7.1 has no verify_citation and no equivalent among "
+        "its public names; writer's /api/citation endpoint therefore cannot "
+        "verify anything. Tracked: writer-citation-verification-has-no-"
+        "upstream-20260818"
+    ),
+}
+
+
+def _symbol_param(module_name, symbol):
+    reason = KNOWN_MISSING_UPSTREAM.get((module_name, symbol))
+    marks = [pytest.mark.xfail(strict=True, reason=reason)] if reason else []
+    return pytest.param(module_name, symbol, marks=marks)
+
+
+@pytest.mark.parametrize(
+    "module_name,symbol",
+    [_symbol_param(m, s) for m, s in PEER_SYMBOL_IMPORTS],
+)
+def test_cross_package_symbol_is_present(module_name, symbol):
+    """A peer symbol writer imports must still exist where writer looks."""
+    # Arrange
+    pytest.importorskip(module_name.split(".")[0])
+    module = importlib.import_module(module_name)
+    # Act
+    present = hasattr(module, symbol)
+    # Assert
+    assert present, f"{module_name}.{symbol} is gone — writer imports it"
+
+
+# EOF
