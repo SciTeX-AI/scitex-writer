@@ -17,121 +17,35 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .._dataclasses import CompilationResult
-from .._dataclasses.config import DOC_TYPE_DIRS
 from .._utils._pdf_pages import produced_page_count
 from ..workspace_layout import (
     COMPILE_SCRIPT_RELPATHS,
     WORKSPACE_RELPATH,
     compile_script_relpath,
 )
+
+# The WHERE questions (script, log, PDF) live in _artifacts; re-exported so
+# existing imports of these private names from _runner keep resolving.
+from ._artifacts import (
+    _PROMOTED_WARNING,
+    EXIT_PROMOTED_WITH_WARNINGS,
+    _doc_latex_log,
+    _find_output_files,
+    _get_compile_script,
+)
+from ._event_log import (
+    EVENT_ATTEMPT,
+    EVENT_FAILURE,
+    EVENT_REFUSAL,
+    EVENT_SUCCESS,
+    new_attempt_id,
+    record_event,
+)
 from ._execute import _execute_with_callbacks, _run_sh_command
 from ._parser import parse_output
 from ._validator import validate_before_compile
 
 logger = getLogger(__name__)
-
-EXIT_PROMOTED_WITH_WARNINGS = 3
-"""The compile scripts' exit code for "a valid PDF was produced and promoted,
-but the engine exited non-zero" -- in practice a non-fatal bibtex error on a
-stub/duplicate bib entry, which makes latexmk exit 12 even though pdfTeX
-finalized a complete PDF. Set by
-modules/compilation_compiled_tex_to_compiled_pdf.sh and propagated by
-compile_{manuscript,supplementary,revision}.sh.
-
-It is a DISTINCT code, not 0, precisely so the state stays distinguishable from
-a clean compile: the PDF is kept (destroying a usable manuscript over a
-warning-grade bib problem is the bug being fixed here), but no one -- human or
-caller -- is told the run was clean."""
-
-_PROMOTED_WARNING = (
-    "PDF PROMOTED despite a non-zero engine exit: the document compiled to "
-    "{pages} page(s), but the engine reported an error -- usually a non-fatal "
-    "bibtex problem such as a stub or duplicate bib entry. The PDF is usable; "
-    "FIX THE BIBLIOGRAPHY BEFORE SUBMISSION (see the .log / .blg)."
-)
-
-
-def _doc_latex_log(project_dir: Path, doc_type: str) -> Path:
-    """The document's OWN LaTeX log -- where pdfTeX writes "Output written on".
-
-    Deliberately not `_find_output_files`'s "newest *.log", which can be the
-    tee'd global.log rather than the document's own log.
-    """
-    return project_dir / DOC_TYPE_DIRS[doc_type] / "logs" / f"{doc_type}.log"
-
-
-def _get_compile_script(project_dir: Path, doc_type: str) -> Optional[Path]:
-    """
-    Get compile script path for document type.
-
-    Delegates to :mod:`scitex_writer.workspace_layout`, which is the published
-    single source of truth for where writer keeps things. It used to spell the
-    ``scripts/shell/compile_<doc_type>.sh`` tail out here, three times; that
-    private copy is what a downstream caller had to guess at, and guessing it
-    wrong is what made full compilation fail with a bare rc=127.
-
-    Parameters
-    ----------
-    project_dir : Path
-        Path to the writer WORKSPACE -- the directory holding ``scripts/``,
-        ``config/`` and ``01_manuscript/``. For a project root that is
-        ``scitex_writer.workspace_layout.workspace_dir(project_root)``, not the
-        root itself.
-    doc_type : str
-        Document type ('manuscript', 'supplementary', 'revision')
-
-    Returns
-    -------
-    Optional[Path]
-        Path to the compilation script, or ``None`` for an unknown
-        ``doc_type`` -- the shape ``run_compile`` already handles.
-    """
-    try:
-        return project_dir / compile_script_relpath(doc_type)
-    except ValueError:
-        return None
-
-
-def _find_output_files(
-    project_dir: Path,
-    doc_type: str,
-) -> tuple:
-    """
-    Find generated output files after compilation.
-
-    Parameters
-    ----------
-    project_dir : Path
-        Path to project directory
-    doc_type : str
-        Document type
-
-    Returns
-    -------
-    tuple
-        (output_pdf, diff_pdf, log_file)
-    """
-    doc_dir = project_dir / DOC_TYPE_DIRS[doc_type]
-
-    # Find generated PDF
-    pdf_name = f"{doc_type}.pdf"
-    potential_pdf = doc_dir / pdf_name
-    output_pdf = potential_pdf if potential_pdf.exists() else None
-
-    # Check for diff PDF
-    diff_name = f"{doc_type}_diff.pdf"
-    potential_diff = doc_dir / diff_name
-    diff_pdf = potential_diff if potential_diff.exists() else None
-
-    # Find log file
-    log_dir = doc_dir / "logs"
-    log_file = None
-    if log_dir.exists():
-        log_files = list(log_dir.glob("*.log"))
-        if log_files:
-            log_file = max(log_files, key=lambda p: p.stat().st_mtime)
-
-    return output_pdf, diff_pdf, log_file
 
 
 def run_compile(
@@ -212,6 +126,19 @@ def run_compile(
     progress(0, "Starting compilation...")
     log("[INFO] Starting LaTeX compilation...")
 
+    # Every attempt leaves a durable record (see _event_log): an `attempt`
+    # now, then exactly one `refusal` / `failure` / `success` below. The
+    # attempt_id ties the two lines together in the log.
+    attempt_id = new_attempt_id()
+    record_event(
+        project_dir,
+        EVENT_ATTEMPT,
+        doc_type=doc_type,
+        entry_point="runner",
+        attempt_id=attempt_id,
+        extra={"track_changes": track_changes, "no_figs": no_figs, "force": force},
+    )
+
     # Validate project structure before compilation
     try:
         progress(5, "Validating project structure...")
@@ -220,6 +147,15 @@ def run_compile(
     except Exception as e:
         error_msg = f"[ERROR] Validation failed: {e}"
         log(error_msg)
+        record_event(
+            project_dir,
+            EVENT_REFUSAL,
+            reason="validation",
+            doc_type=doc_type,
+            entry_point="runner",
+            attempt_id=attempt_id,
+            detail=str(e),
+        )
         return CompilationResult(
             success=False,
             exit_code=1,
@@ -236,6 +172,15 @@ def run_compile(
             f"{sorted(COMPILE_SCRIPT_RELPATHS)}"
         )
         log(error_msg)
+        record_event(
+            project_dir,
+            EVENT_REFUSAL,
+            reason="unknown-doc-type",
+            doc_type=doc_type,
+            entry_point="runner",
+            attempt_id=attempt_id,
+            detail=error_msg,
+        )
         return CompilationResult(
             success=False,
             exit_code=127,
@@ -258,6 +203,15 @@ def run_compile(
             f"scitex_writer.ensure_workspace(<project root>)."
         )
         log(error_msg)
+        record_event(
+            project_dir,
+            EVENT_REFUSAL,
+            reason="workspace-missing",
+            doc_type=doc_type,
+            entry_point="runner",
+            attempt_id=attempt_id,
+            detail=error_msg,
+        )
         return CompilationResult(
             success=False,
             exit_code=127,
@@ -419,6 +373,46 @@ def run_compile(
             ),
         )
 
+        # The engine WAS started, so whatever follows is success or FAILURE --
+        # never a refusal. Name the failure precisely: the three shapes need
+        # three different fixes (read the engine errors / find why the script
+        # claimed a PDF it did not make / find why exit 0 made nothing).
+        pages_seen = pages if (result.returncode == 0 or promoted) else None
+        if compilation_result.success:
+            record_event(
+                project_dir,
+                EVENT_SUCCESS,
+                doc_type=doc_type,
+                entry_point="runner",
+                attempt_id=attempt_id,
+                exit_code=result.returncode,
+                output_pdf=output_pdf,
+                pages=pages_seen,
+                duration=duration,
+                detail=compilation_result.message,
+            )
+        else:
+            if result.returncode not in (0, EXIT_PROMOTED_WITH_WARNINGS):
+                failure_reason = "engine-nonzero"
+            elif promoted:
+                failure_reason = "promoted-without-pdf"
+            else:
+                failure_reason = "exit-zero-no-pdf"
+            record_event(
+                project_dir,
+                EVENT_FAILURE,
+                reason=failure_reason,
+                doc_type=doc_type,
+                entry_point="runner",
+                attempt_id=attempt_id,
+                exit_code=result.returncode,
+                pages=pages_seen,
+                errors=errors,
+                stderr=result.stderr,
+                duration=duration,
+                detail=errors[0] if errors else None,
+            )
+
         if compilation_result.success:
             progress(100, "Complete with warnings!" if promoted else "Complete!")
             log(f"[SUCCESS] Compilation succeeded in {duration:.2f}s")
@@ -432,6 +426,16 @@ def run_compile(
     except Exception as e:
         duration = (datetime.now() - start_time).total_seconds()
         logger.error(f"Compilation error: {e}")
+        record_event(
+            project_dir,
+            EVENT_FAILURE,
+            reason="exception",
+            doc_type=doc_type,
+            entry_point="runner",
+            attempt_id=attempt_id,
+            detail=f"{type(e).__name__}: {e}",
+            duration=duration,
+        )
         return CompilationResult(
             success=False,
             exit_code=1,

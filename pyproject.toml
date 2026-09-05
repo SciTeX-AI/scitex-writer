@@ -50,6 +50,13 @@ dependencies = [
     # missing optional. Below this floor the CLI fails to import at all, which
     # is why the floor has to carry the promise instead of a try/except.
     "scitex-dev>=0.30.0",
+    # The compile event log (_compile/_event_log.py) emits every attempt /
+    # refusal / failure / success through scitex_logging.getLogger so the
+    # records join whatever sink the host configured, in addition to the
+    # per-workspace JSONL. The import is deliberately unguarded: a compile
+    # whose outcome cannot be logged is the silent-failure shape this log
+    # was created to end (operator, Telegram 4901, 2026-09-05).
+    "scitex-logging>=0.2.0",
     "django>=4.2",
     # scitex-ui ships `standalone_shell.html` + shell CSS that the editor
     # and viewer templates extend. Loading either page without scitex-ui
