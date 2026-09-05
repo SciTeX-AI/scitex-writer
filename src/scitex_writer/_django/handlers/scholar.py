@@ -21,7 +21,6 @@ def handle_scholar_status(request, project):
             "scholar_importable": _scholar.SCHOLAR_AVAILABLE,
             "scholar_cli_on_path": _scholar_cli.scholar_cli_on_path(),
             "library_root": str(root) if root else None,
-            "index_db_present": bool(root and (root / "index.db").is_file()),
         }
     )
 

@@ -78,45 +78,46 @@ writer owns the sources, the claim store, and the compile artifacts. **live-pape
 supplies the geometry (page + normalized rect + any hotspot hit); writer supplies
 the meaning.** This is the single most important cross-repo seam (§5).
 
-### 2.3 Where it persists — recommendation
+### 2.3 Where it persists
 
-**Recommendation: a small SQLite DB at
-`<proj-root>/.scitex/writer/runtime/writer.db`, path resolved via
-`scitex_config.local_state.runtime_path("writer", "writer.db")` — NOT a
-hard-coded path, and NOT a JSON sidecar.**
+**Decided: the fleet store — the shared `scitex_dev.store` primitive, used
+DIRECTLY from `scitex_writer._annotations._store`. No writer-owned database
+layer, no local file, no JSON sidecar.**
 
-Rationale, grounded in the fleet convention and the existing code:
+Rationale, grounded in the fleet ruling and the access pattern:
 
-- **The convention is already canonical and already used here.** The runtime
-  layout is specified in
-  `scitex/_skills/general/01_arch_06_local-state-directories.md` and
-  implemented in `scitex_config/_ecosystem/_local_state.py`:
-  `<proj-root>/.scitex/<pkg>/runtime/` for "logs, PID files, caches, ephemeral
-  databases" — gitignored, regenerable. scitex-writer **already writes** to
-  `.scitex/writer/runtime/` (the build registry `builds/builds.json`, see
-  `scripts/python/_build_id.py`), and the dir already exists with its
-  `.gitkeep` + `README.md` seeds. A `writer.db` slots in next to `builds/` with
-  zero new convention.
-- **Why SQLite over the existing JSON-sidecar style:** annotations are
-  *appended concurrently* (the Django server is multi-threaded — see
+- **Storage is not a per-package decision.** The fleet has ONE storage
+  primitive — `from scitex_dev.store import Store, StoreTarget, host_store,
+  Schema, FieldPolicy, MergeRule, WriterPolicy` — resolving to the per-host
+  PostgreSQL on :55432. A package that grows its own database layer grows its
+  own bugs with it, so `_store.py` declares a `Schema` and calls `Store`
+  directly rather than wrapping it. A host whose PostgreSQL is unreachable
+  raises, naming the target; there is no local fallback, because a store that
+  silently accepts writes nobody else can read is worse than one that refuses.
+- **Why not the existing JSON-sidecar style:** annotations are *appended
+  concurrently* (the Django server is multi-threaded — see
   `ProjectState._lock`) and *queried by predicate* ("all `open` annotations for
   `doc_type=manuscript` on `build_id=X`", "annotations touching `claim_id=Y`").
   A JSON file forces a read-modify-write of the whole document under a lock on
-  every POST (the exact corruption/race footgun the scitex-todo skill warns
-  about for `tasks.yaml`). SQLite gives atomic single-row inserts, indexed
-  predicate queries, and `status` updates without rewriting siblings — for a
-  cost of one stdlib `sqlite3` table. The build registry stays JSON (write-once
-  per compile, read-rarely); annotations are a different access pattern.
-- **Schema:** a single `annotations` table, columns mirroring §2.1 (JSON columns
-  for `region`/`payload`/`source_ref`), indexed on `(doc_type, status)` and
-  `annotation_id`. First migration is a `CREATE TABLE IF NOT EXISTS`; no ORM,
-  no Django models (writer's Django app is model-less by design — it's a thin
-  HTTP shell over `scitex_writer` internals).
-
-**Fallback if SQLite is rejected in review:** a JSONL append-log at
-`.scitex/writer/runtime/annotations/<doc_type>.jsonl` (append-only sidesteps the
-whole-file rewrite race; queries load-and-filter). Lower engineering cost, worse
-query story. SQLite is the recommendation; JSONL is the documented alternative.
+  every POST (the exact corruption/race footgun the scitex-cards skill warns
+  about for `tasks.yaml`). The store gives an atomic single-record `put` and
+  `status` updates that do not rewrite siblings. The build registry stays JSON
+  (write-once per compile, read-rarely); annotations are a different access
+  pattern.
+- **Schema:** one `annotations` store, fields mirroring §2.1 (`FieldKind.JSON`
+  for `region`/`payload`/`source_ref`). Identity is `(project,
+  annotation_id)` — the store is fleet-wide where a per-manuscript file used
+  to do the scoping for free, so the manuscript project directory is the first
+  identity field and an unscoped listing is never what a request path asks
+  for. Every recorded fact merges `IMMUTABLE`; only `status` is
+  `LAST_WRITER_WINS`. No ORM, no Django models (writer's Django app is
+  model-less by design — it's a thin HTTP shell over `scitex_writer`
+  internals).
+- **Known cost:** `Store` exposes `get`/`put`/`rows`, not SQL, so a filtered
+  listing materialises the table and filters in Python. Writes stay O(1). The
+  row count is bounded by how many annotations a human draws on a PDF, so this
+  is acceptable; a polled dashboard would want an indexed query, which is a gap
+  in the primitive rather than a reason for writer to keep its own database.
 
 ## 3. The HTTP surface
 
@@ -156,7 +157,8 @@ reusable from CLI/MCP later.
 **POST sequence** (`handle_add_annotation`):
 1. parse + validate (page, region, kind, payload present).
 2. resolve `source_ref` (§2.2) if not client-supplied.
-3. insert into `writer.db` (server-assigned `annotation_id`, `created_at`).
+3. `put` one record into the `annotations` store, scoped to the manuscript
+   project (server-assigned `annotation_id`, `created_at`).
 4. **emit** the notification (§4); capture success as `notified` in the response
    (fail-soft — a failed emit never fails the persist).
 
@@ -230,9 +232,9 @@ config/impl detail, not an API change.**
 Smallest useful spike first; each step is independently shippable and CI-gated.
 
 1. **Spike 0 — persist + emit, one text-comment, NO UI.** Add
-   `scitex_writer._annotations` (SQLite via
-   `local_state.runtime_path("writer","writer.db")`; single `annotations`
-   table) and `handlers/annotation.py` with **POST + GET only**, `kind` limited
+   `scitex_writer._annotations` (the shared `scitex_dev.store` primitive used
+   directly; one `annotations` store keyed on `(project, annotation_id)`) and
+   `handlers/annotation.py` with **POST + GET only**, `kind` limited
    to `text_comment`, `source_ref` = page-only (no SyncTeX yet). Emit via
    `comment_task` to a hard-agreed card id. Prove the loop end-to-end with
    `curl`/a test: POST a comment → it lands in the owning agent's

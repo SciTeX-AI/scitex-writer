@@ -6,9 +6,9 @@ Used only by the standalone launcher; cloud deployments ignore this
 module and mount `scitex_writer._django.urls` under their own prefix.
 
 Mirrors the `figrecipe._django.settings` pattern: bare-minimum installed
-apps, optional `scitex_ui` for the shared workspace shell, and a SQLite
-database so any future models (chat sessions, comments, versions) work
-out of the box.
+apps, optional `scitex_ui` for the shared workspace shell, and the fleet's
+PostgreSQL as the database so any future models (chat sessions, comments,
+versions) work out of the box.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import os
 import secrets
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -97,13 +98,35 @@ TEMPLATES = [
     },
 ]
 
-# SQLite lives in the temp dir so local runs don't pollute the project
-_DB_DIR = Path(tempfile.gettempdir()) / "scitex_writer"
-_DB_DIR.mkdir(parents=True, exist_ok=True)
+# The database is the fleet's PostgreSQL, the same cluster every SciTeX
+# package reaches through `scitex_dev.store`. Writer's Django app is
+# MODEL-LESS by design, so nothing here opens a connection during a normal
+# request; this entry exists so a future model works out of the box and so
+# `manage.py` subcommands that touch the DB reach the fleet store rather than
+# a private file.
+#
+# THE DEFAULT NAMES THE PRIMARY DELIBERATELY. Every host's loopback :55432 is
+# a READ-ONLY REPLICA of the same cluster (operator ruling, 2026-08-29), so a
+# loopback default would accept reads and refuse every write — a server that
+# looks healthy until the first INSERT. `SCITEX_WRITER_DATABASE_URL` overrides
+# for a deployment with its own cluster; `SCITEX_STORE_DSN` is the fleet-wide
+# variable the store primitive already resolves, so honouring it keeps Django
+# and the store pointed at ONE database instead of two that can disagree.
+_DEFAULT_DATABASE_URL = "postgresql://scitex-primary:55432/scitex"
+_DATABASE_URL = (
+    os.environ.get("SCITEX_WRITER_DATABASE_URL")
+    or os.environ.get("SCITEX_STORE_DSN")
+    or _DEFAULT_DATABASE_URL
+)
+_DB = urlsplit(_DATABASE_URL)
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(_DB_DIR / "db.sqlite3"),
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": _DB.path.lstrip("/") or "scitex",
+        "USER": _DB.username or "",
+        "PASSWORD": _DB.password or "",
+        "HOST": _DB.hostname or "",
+        "PORT": str(_DB.port) if _DB.port else "",
     }
 }
 
@@ -111,4 +134,7 @@ STATIC_URL = "/static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 
-WRITER_TEMP_DIR = _DB_DIR
+# Scratch space for render artefacts. Under the system temp dir so local runs
+# don't pollute the manuscript project.
+WRITER_TEMP_DIR = Path(tempfile.gettempdir()) / "scitex_writer"
+WRITER_TEMP_DIR.mkdir(parents=True, exist_ok=True)
