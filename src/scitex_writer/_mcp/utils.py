@@ -31,13 +31,49 @@ def run_compile_script(
     track_changes: bool = False,
     engine: str | None = None,
 ) -> dict:
-    """Run compile.sh script with specified options."""
+    """Run compile.sh script with specified options.
+
+    Every call leaves records in the workspace event log
+    (:mod:`scitex_writer._compile._event_log`): an ``attempt`` first, then
+    exactly one of ``success`` / ``failure`` / ``refusal``. A missing
+    compile.sh is a REFUSAL (the engine was never started); everything after
+    the subprocess launches is a failure or a success.
+    """
+    from .._compile._event_log import (
+        EVENT_ATTEMPT,
+        EVENT_FAILURE,
+        EVENT_REFUSAL,
+        EVENT_SUCCESS,
+        new_attempt_id,
+        record_event,
+    )
+
     compile_script = project_dir / "compile.sh"
+    attempt_id = new_attempt_id()
+    record_event(
+        project_dir,
+        EVENT_ATTEMPT,
+        doc_type=doc_type,
+        entry_point="mcp",
+        attempt_id=attempt_id,
+        detail=f"compile.sh {doc_type}",
+        extra={"engine": engine, "draft": draft, "timeout_s": timeout},
+    )
 
     if not compile_script.exists():
+        error = f"compile.sh not found at {compile_script}"
+        record_event(
+            project_dir,
+            EVENT_REFUSAL,
+            reason="workspace-missing",
+            doc_type=doc_type,
+            entry_point="mcp",
+            attempt_id=attempt_id,
+            detail=error,
+        )
         return {
             "success": False,
-            "error": f"compile.sh not found at {compile_script}",
+            "error": error,
         }
 
     # Build command
@@ -84,44 +120,82 @@ def run_compile_script(
             "revision": project_dir / "03_revision" / "revision.pdf",
         }
         output_pdf = pdf_paths.get(doc_type)
+        pdf_present = bool(output_pdf and output_pdf.exists())
+        stdout_tail = (
+            result.stdout[-2_000:] if len(result.stdout) > 2_000 else result.stdout
+        )
+        stderr_tail = (
+            result.stderr[-2_000:] if len(result.stderr) > 2_000 else result.stderr
+        )
 
         if result.returncode == 0:
+            record_event(
+                project_dir,
+                EVENT_SUCCESS,
+                doc_type=doc_type,
+                entry_point="mcp",
+                attempt_id=attempt_id,
+                exit_code=result.returncode,
+                output_pdf=output_pdf if pdf_present else None,
+                detail=None
+                if pdf_present
+                else "exit 0 but no PDF at the expected path",
+            )
             return {
                 "success": True,
-                "output_pdf": (
-                    str(output_pdf) if output_pdf and output_pdf.exists() else None
-                ),
+                "output_pdf": str(output_pdf) if pdf_present else None,
                 "exit_code": result.returncode,
-                "stdout": (
-                    result.stdout[-2000:]
-                    if len(result.stdout) > 2000
-                    else result.stdout
-                ),
+                "stdout": stdout_tail,
                 "message": f"{doc_type.title()} compiled successfully",
             }
         else:
+            error = f"Compilation failed with exit code {result.returncode}"
+            record_event(
+                project_dir,
+                EVENT_FAILURE,
+                reason="engine-nonzero",
+                doc_type=doc_type,
+                entry_point="mcp",
+                attempt_id=attempt_id,
+                exit_code=result.returncode,
+                output_pdf=output_pdf if pdf_present else None,
+                stderr=result.stderr,
+                detail=error,
+            )
             return {
                 "success": False,
                 "exit_code": result.returncode,
-                "stdout": (
-                    result.stdout[-2000:]
-                    if len(result.stdout) > 2000
-                    else result.stdout
-                ),
-                "stderr": (
-                    result.stderr[-2000:]
-                    if len(result.stderr) > 2000
-                    else result.stderr
-                ),
-                "error": f"Compilation failed with exit code {result.returncode}",
+                "stdout": stdout_tail,
+                "stderr": stderr_tail,
+                "error": error,
             }
 
     except subprocess.TimeoutExpired:
+        error = f"Compilation timed out after {timeout} seconds"
+        record_event(
+            project_dir,
+            EVENT_FAILURE,
+            reason="timeout",
+            doc_type=doc_type,
+            entry_point="mcp",
+            attempt_id=attempt_id,
+            detail=error,
+            duration=float(timeout),
+        )
         return {
             "success": False,
-            "error": f"Compilation timed out after {timeout} seconds",
+            "error": error,
         }
     except Exception as e:
+        record_event(
+            project_dir,
+            EVENT_FAILURE,
+            reason="exception",
+            doc_type=doc_type,
+            entry_point="mcp",
+            attempt_id=attempt_id,
+            detail=f"{type(e).__name__}: {e}",
+        )
         return {
             "success": False,
             "error": str(e),

@@ -7,6 +7,41 @@
 from ..utils import resolve_project_path, run_compile_script
 
 
+def _prepare(project_path, doc_type: str) -> None:
+    """Run the two fail-loud pre-compile steps, recording a REFUSAL if one raises.
+
+    Both steps raise before the engine starts, so a raise here is a refusal
+    (the manuscript was never judged), not a compile failure. The exception
+    is re-raised unchanged -- the record is added, the behaviour is not.
+    """
+    from ..._compile._event_log import EVENT_REFUSAL, record_event
+
+    try:
+        _auto_render_claims(project_path)
+    except Exception as exc:
+        record_event(
+            project_path,
+            EVENT_REFUSAL,
+            reason="claims-render-failed",
+            doc_type=doc_type,
+            entry_point="mcp",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+    try:
+        _inject_version_stamp(project_path)
+    except Exception as exc:
+        record_event(
+            project_path,
+            EVENT_REFUSAL,
+            reason="version-stamp-failed",
+            doc_type=doc_type,
+            entry_point="mcp",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+
+
 def _auto_render_claims(project_path) -> None:
     """Regenerate claims_rendered.tex from claims.json (\\vclaim SSoT), fail loud.
 
@@ -67,8 +102,7 @@ def compile_manuscript(
 ) -> dict:
     """Compile manuscript to PDF."""
     project_path = resolve_project_path(project_dir)
-    _auto_render_claims(project_path)
-    _inject_version_stamp(project_path)
+    _prepare(project_path, "manuscript")
     return run_compile_script(
         project_path,
         "manuscript",
@@ -97,8 +131,7 @@ def compile_supplementary(
 ) -> dict:
     """Compile supplementary materials to PDF."""
     project_path = resolve_project_path(project_dir)
-    _auto_render_claims(project_path)
-    _inject_version_stamp(project_path)
+    _prepare(project_path, "supplementary")
     return run_compile_script(
         project_path,
         "supplementary",
@@ -125,8 +158,7 @@ def compile_revision(
 ) -> dict:
     """Compile revision document to PDF."""
     project_path = resolve_project_path(project_dir)
-    _auto_render_claims(project_path)
-    _inject_version_stamp(project_path)
+    _prepare(project_path, "revision")
     return run_compile_script(
         project_path,
         "revision",
