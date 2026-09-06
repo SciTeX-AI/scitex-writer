@@ -2,7 +2,7 @@
   "name": "writer_app",
   "slug": "writer",
   "label": "Writer",
-  "version": "0.1.0",
+  "pip_package": "scitex-writer",
   "icon": "fas fa-file-alt",
   "subtitle": "LaTeX manuscript editor with PDF preview and verifiable claims",
   "about": "Edit, compile, and verify scientific manuscripts. File tree, CodeMirror LaTeX editor, PDF preview via pdf.js, one-click compile for manuscript/supplementary/revision, bibliography browser, and claim-chain visualization via scitex-clew.",
